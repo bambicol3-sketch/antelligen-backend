@@ -1,11 +1,113 @@
 # Test your FastAPI endpoints
 
-GET http://127.0.0.1:8000/
+### Health Check
+GET http://127.0.0.1:33333/
 Accept: application/json
 
-###
+### Agent Query - 전체 성공 (삼성전자, 모든 에이전트)
+POST http://127.0.0.1:33333/api/v1/agent/query
+Content-Type: application/json
 
-GET http://127.0.0.1:8000/hello/User
+{
+  "query": "삼성전자 종합 분석해줘",
+  "ticker": "005930",
+  "options": {
+    "agents": ["stock", "finance", "news", "disclosure"]
+  }
+}
+
+### Agent Query - 최소 요청 (기본 에이전트 전체)
+POST http://127.0.0.1:33333/api/v1/agent/query
+Content-Type: application/json
+
+{
+  "query": "삼성전자 알려줘",
+  "ticker": "005930"
+}
+
+### Agent Query - 단일 에이전트 (Stock만)
+POST http://127.0.0.1:33333/api/v1/agent/query
+Content-Type: application/json
+
+{
+  "query": "SK하이닉스 주가 알려줘",
+  "ticker": "000660",
+  "session_id": "sess_test_001",
+  "options": {
+    "agents": ["stock"]
+  }
+}
+
+### Agent Query - 부분 실패 시나리오 (존재하지 않는 ticker로 일부 no_data)
+POST http://127.0.0.1:33333/api/v1/agent/query
+Content-Type: application/json
+
+{
+  "query": "고려아연 분석해줘",
+  "ticker": "010130",
+  "options": {
+    "agents": ["stock", "news", "finance"]
+  }
+}
+
+### Agent Query - user_profile 포함 (보수적 장기 투자자)
+POST http://127.0.0.1:33333/api/v1/agent/query
+Content-Type: application/json
+
+{
+  "query": "삼성전자 투자 의견 알려줘",
+  "ticker": "005930",
+  "user_profile": {
+    "risk_level": "conservative",
+    "investment_horizon": "long"
+  },
+  "options": {
+    "agents": ["stock", "finance", "news"]
+  }
+}
+
+### Agent Query - user_profile 포함 (적극적 단기 투자자)
+POST http://127.0.0.1:33333/api/v1/agent/query
+Content-Type: application/json
+
+{
+  "query": "SK하이닉스 단기 매매 전략",
+  "ticker": "000660",
+  "user_profile": {
+    "risk_level": "aggressive",
+    "investment_horizon": "short"
+  }
+}
+
+### Agent Query - ticker 없이 질문만
+POST http://127.0.0.1:33333/api/v1/agent/query
+Content-Type: application/json
+
+{
+  "query": "오늘 시장 전반적으로 어때?"
+}
+
+### Agent Query - 유효성 검증 실패 (빈 질문)
+POST http://127.0.0.1:33333/api/v1/agent/query
+Content-Type: application/json
+
+{
+  "query": "  "
+}
+
+### Stock 조회
+GET http://127.0.0.1:33333/api/v1/stock/005930
 Accept: application/json
 
-###
+### Post 생성
+POST http://127.0.0.1:33333/api/v1/post
+Content-Type: application/json
+
+{
+  "title": "테스트 게시글",
+  "content": "테스트 내용입니다."
+}
+
+### Agent Schema 조회
+GET http://127.0.0.1:33333/api/v1/agent-schema
+Accept: application/json
