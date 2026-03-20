@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str
     openai_api_key: str
 
-    serp_api_key: str
+    serp_api_key: str = ""
 
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     redis_port: int = 6379
     redis_password: Optional[str] = None
 
-    auth_password: str
+    auth_password: str = ""
     session_ttl_seconds: int = 3600
 
     kakao_client_id: str

@@ -50,10 +50,8 @@ async def search_news(
     settings = get_settings()
     provider = SerpNewsSearchProvider(api_key=settings.serp_api_key)
     usecase = SearchNewsUseCase(news_search_provider=provider)
-
     request = SearchNewsRequest(keyword=keyword, page=page, page_size=page_size)
     result = await usecase.execute(request)
-
     return BaseResponse.ok(data=result)
 
 
@@ -67,7 +65,6 @@ async def save_article(
     content_provider = ArticleContentScraper()
     usecase = SaveArticleUseCase(repository=repository, content_provider=content_provider)
     result = await usecase.execute(request)
-
     return BaseResponse.ok(data=result)
 
 
@@ -82,5 +79,36 @@ async def analyze_article(
     analysis_provider = OpenAIArticleAnalysisProvider(api_key=settings.openai_api_key)
     usecase = AnalyzeArticleUseCase(repository=repository, analysis_provider=analysis_provider)
     result = await usecase.execute(article_id)
-
     return BaseResponse.ok(data=result)
+
+
+# Mock 뉴스 에이전트 엔드포인트 - 실제 API 없이 SubAgentResponse 형식으로 반환
+@router.get("/agent-result")
+async def get_news_agent_result(
+    ticker: str = Query(..., description="종목 코드 (예: 005930)"),
+):
+    """메인 에이전트가 호출하는 뉴스 서브 에이전트 mock 엔드포인트"""
+    mock_response = {
+        "agent_name": "news",
+        "status": "success",
+        "data": {
+            "ticker": ticker,
+            "articles": [
+                {
+                    "title": f"{ticker} 관련 뉴스 mock 데이터",
+                    "url": "https://example.com/news/1",
+                    "summary": "mock 뉴스 요약입니다.",
+                    "published_at": "2026-03-20"
+                }
+            ]
+        },
+        "signal": "bullish",
+        "confidence": 0.75,
+        "summary": f"{ticker} 종목에 대한 뉴스 감성 분석 결과 긍정적 신호가 감지되었습니다.",
+        "key_points": [
+            "긍정적 실적 발표",
+            "신규 사업 확장",
+            "업계 호황"
+        ]
+    }
+    return BaseResponse.ok(data=mock_response)
