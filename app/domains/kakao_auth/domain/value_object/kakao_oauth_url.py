@@ -14,6 +14,7 @@ class KakaoOAuthUrl:
             "response_type": "code",
             "client_id": client_id,
             "redirect_uri": redirect_uri,
+            "prompt": "login",
         }
         self._url = f"{KAKAO_AUTH_BASE_URL}?{urlencode(params)}"
 

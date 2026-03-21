@@ -1,8 +1,10 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.adapter.inbound.api.v1_router import api_v1_router
+from app.domains.authentication.adapter.inbound.api.authentication_router import router as authentication_router
 from app.common.exception.global_exception_handler import register_exception_handlers
 from app.infrastructure.config.settings import Settings, get_settings
 from app.infrastructure.database.database import engine, Base
@@ -24,7 +26,16 @@ async def lifespan(application: FastAPI):
 
 app = FastAPI(debug=settings.debug, lifespan=lifespan)
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[settings.cors_allowed_frontend_url],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(api_v1_router)
+app.include_router(authentication_router)  # /authentication/me (프론트 직접 호출)
 register_exception_handlers(app)
 
 

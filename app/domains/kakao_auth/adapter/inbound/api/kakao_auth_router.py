@@ -1,19 +1,18 @@
 import logging
 
 from fastapi import APIRouter, Depends
-from fastapi.responses import RedirectResponse, JSONResponse
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import redis.asyncio as aioredis
 
 from app.common.exception.app_exception import AppException
-from app.common.response.base_response import BaseResponse
+from app.domains.account.adapter.outbound.cache.account_token_cache_impl import AccountTokenCacheImpl
 from app.domains.account.adapter.outbound.persistence.account_repository_impl import AccountRepositoryImpl
 from app.domains.account.application.usecase.find_account_by_email_usecase import FindAccountByEmailUseCase
 from app.domains.kakao_auth.adapter.outbound.cache.temp_token_store import TempTokenStore
 from app.domains.kakao_auth.adapter.outbound.external.kakao_token_client import KakaoTokenClient
 from app.domains.kakao_auth.adapter.outbound.external.kakao_user_info_client import KakaoUserInfoClient
-from app.domains.kakao_auth.application.response.kakao_callback_response import KakaoCallbackResponse, TokenType
 from app.domains.kakao_auth.application.usecase.generate_kakao_oauth_url_usecase import (
     GenerateKakaoOAuthUrlUseCase,
 )
@@ -71,21 +70,24 @@ async def request_access_token_after_redirection(
         ).execute(kakao_token.access_token)
 
         logger.info("[Kakao 사용자 정보] 닉네임: %s, 이메일: %s", user_info.nickname, user_info.email)
+        print(f"[DEBUG] 닉네임: {user_info.nickname}, 이메일: {user_info.email}")
 
         account_lookup = await FindAccountByEmailUseCase(
             AccountRepositoryImpl(db)
         ).execute(user_info.email)
 
+        print(f"[DEBUG] is_registered: {account_lookup.is_registered}")
         if account_lookup.is_registered:
             logger.info("[회원 조회] 기존 회원 확인 — email: %s", user_info.email)
-            response_data = KakaoCallbackResponse(
-                token_type=TokenType.REGULAR,
-                is_registered=True,
-                nickname=account_lookup.nickname,
-                email=account_lookup.email,
+            token_cache = AccountTokenCacheImpl(redis, settings.session_ttl_seconds)
+            await token_cache.save_kakao_token(
                 account_id=account_lookup.account_id,
+                kakao_access_token=kakao_token.access_token,
             )
-            return BaseResponse.ok(data=response_data, message="기존 회원입니다.")
+            user_token = await token_cache.issue_user_token(account_id=account_lookup.account_id)
+
+            redirect_url = f"{settings.cors_allowed_frontend_url}/auth-callback?token={user_token}"
+            return RedirectResponse(url=redirect_url, status_code=302)
 
         # 미가입 회원 — 임시 토큰 발급
         temp_token = await IssueTempTokenUseCase(
@@ -98,23 +100,8 @@ async def request_access_token_after_redirection(
 
         logger.info("[임시 토큰 발급] 발급 완료 — token prefix: %s...", temp_token.token[:8])
 
-        response_data = KakaoCallbackResponse(
-            token_type=TokenType.TEMP,
-            is_registered=False,
-            nickname=user_info.nickname,
-            email=user_info.email,
-        )
-        response = JSONResponse(
-            content=BaseResponse.ok(data=response_data, message="미가입 회원입니다.").model_dump()
-        )
-        response.set_cookie(
-            key="temp_token",
-            value=temp_token.token,
-            httponly=True,
-            path="/",
-            max_age=300,
-        )
-        return response
+        redirect_url = f"{settings.cors_allowed_frontend_url}/auth-callback?token={temp_token.token}"
+        return RedirectResponse(url=redirect_url, status_code=302)
 
     except ValueError as e:
         raise AppException(status_code=400, message=str(e))

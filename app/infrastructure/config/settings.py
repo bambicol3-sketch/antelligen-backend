@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     auth_password: str = ""
     session_ttl_seconds: int = 3600
 
+    cors_allowed_frontend_url: str = "http://localhost:3000"
+
     kakao_client_id: str
     kakao_redirect_uri: str
 
