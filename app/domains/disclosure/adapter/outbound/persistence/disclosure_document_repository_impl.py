@@ -88,6 +88,19 @@ class DisclosureDocumentRepositoryImpl(DisclosureDocumentRepositoryPort):
             return None
         return DisclosureDocumentMapper.to_entity(orm)
 
+    async def find_summaries_by_rcept_nos(self, rcept_nos: list[str]) -> dict[str, str]:
+        if not rcept_nos:
+            return {}
+        stmt = (
+            select(DisclosureDocumentOrm.rcept_no, DisclosureDocumentOrm.summary_text)
+            .where(
+                DisclosureDocumentOrm.rcept_no.in_(rcept_nos),
+                DisclosureDocumentOrm.summary_text.isnot(None),
+            )
+        )
+        result = await self._db.execute(stmt)
+        return {row.rcept_no: row.summary_text for row in result.all()}
+
     async def find_not_stored_in_rag(self, limit: int = 100) -> list[DisclosureDocument]:
         stmt = (
             select(DisclosureDocumentOrm)

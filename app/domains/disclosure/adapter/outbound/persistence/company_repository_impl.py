@@ -26,40 +26,49 @@ class CompanyRepositoryImpl(CompanyRepositoryPort):
         if not companies:
             return 0
 
-        values = [
-            {
-                "corp_code": c.corp_code,
-                "corp_name": c.corp_name,
-                "stock_code": c.stock_code,
-                "market_type": c.market_type,
-                "market_cap_rank": c.market_cap_rank,
-                "is_top300": c.is_top300,
-                "is_active": c.is_active,
-            }
-            for c in companies
-        ]
+        # asyncpg 파라미터 제한(32767)을 초과하지 않도록 배치 분할
+        # 컬럼 7개 기준 약 4,000건이 한계 → 500건씩 배치
+        BATCH_SIZE = 500
+        total_saved = 0
 
-        excluded = insert(CompanyOrm).excluded
-        stmt = (
-            insert(CompanyOrm)
-            .values(values)
-            .on_conflict_do_update(
-                index_elements=["corp_code"],
-                set_={
-                    "corp_name": excluded.corp_name,
-                    "stock_code": excluded.stock_code,
-                    "market_type": excluded.market_type,
-                    "market_cap_rank": excluded.market_cap_rank,
-                    "is_top300": excluded.is_top300,
-                    "is_active": excluded.is_active,
-                },
+        for i in range(0, len(companies), BATCH_SIZE):
+            batch = companies[i:i + BATCH_SIZE]
+            values = [
+                {
+                    "corp_code": c.corp_code,
+                    "corp_name": c.corp_name,
+                    "stock_code": c.stock_code,
+                    "market_type": c.market_type,
+                    "market_cap_rank": c.market_cap_rank,
+                    "is_top300": c.is_top300,
+                    "is_active": c.is_active,
+                }
+                for c in batch
+            ]
+
+            excluded = insert(CompanyOrm).excluded
+            stmt = (
+                insert(CompanyOrm)
+                .values(values)
+                .on_conflict_do_update(
+                    index_elements=["corp_code"],
+                    set_={
+                        "corp_name": excluded.corp_name,
+                        "stock_code": excluded.stock_code,
+                        "market_type": excluded.market_type,
+                        "market_cap_rank": excluded.market_cap_rank,
+                        "is_top300": excluded.is_top300,
+                        "is_active": excluded.is_active,
+                    },
+                )
+                .returning(CompanyOrm.id)
             )
-            .returning(CompanyOrm.id)
-        )
 
-        result = await self._db.execute(stmt)
+            result = await self._db.execute(stmt)
+            total_saved += len(result.fetchall())
+
         await self._db.commit()
-        return len(result.fetchall())
+        return total_saved
 
     async def find_by_corp_code(self, corp_code: str) -> Optional[Company]:
         stmt = select(CompanyOrm).where(CompanyOrm.corp_code == corp_code)

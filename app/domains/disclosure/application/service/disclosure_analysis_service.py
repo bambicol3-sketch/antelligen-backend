@@ -6,6 +6,7 @@ from app.domains.disclosure.adapter.outbound.external.dart_disclosure_api_client
 from app.domains.disclosure.adapter.outbound.external.openai_analysis_client import OpenAIAnalysisClient
 from app.domains.disclosure.adapter.outbound.external.openai_embedding_client import OpenAIEmbeddingClient
 from app.domains.disclosure.adapter.outbound.persistence.company_repository_impl import CompanyRepositoryImpl
+from app.domains.disclosure.adapter.outbound.persistence.disclosure_document_repository_impl import DisclosureDocumentRepositoryImpl
 from app.domains.disclosure.adapter.outbound.persistence.disclosure_repository_impl import DisclosureRepositoryImpl
 from app.domains.disclosure.adapter.outbound.persistence.rag_chunk_repository_impl import RagChunkRepositoryImpl
 from app.domains.disclosure.application.response.analysis_response import AnalysisResponse
@@ -62,6 +63,7 @@ class DisclosureAnalysisService:
             usecase = AnalyzeCompanyUseCase(
                 analysis_cache_port=cache,
                 disclosure_repository_port=DisclosureRepositoryImpl(db),
+                disclosure_document_repository_port=DisclosureDocumentRepositoryImpl(db),
                 rag_chunk_repository_port=RagChunkRepositoryImpl(db),
                 embedding_port=OpenAIEmbeddingClient(),
                 llm_analysis_port=OpenAIAnalysisClient(),

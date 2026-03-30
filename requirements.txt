@@ -13,5 +13,4 @@ redis[asyncio]>=5.0.0
 kiwipiepy>=0.17.0
 numpy>=2.0.0
 pgvector>=0.3.0
-pykrx>=1.0.45
 apscheduler>=3.10.0

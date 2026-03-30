@@ -4,18 +4,54 @@
 class AnalysisPromptBuilder:
 
     @staticmethod
-    def _format_disclosures(disclosures: list) -> str:
-        """공시 목록을 텍스트로 포맷팅한다."""
+    def _format_disclosures(disclosures: list, summary_map: dict = None) -> str:
+        """공시 목록을 포맷팅한다. 핵심 공시는 요약 포함, 기타 공시는 카테고리별 건수 요약."""
         if not disclosures:
             return "공시 데이터가 없습니다."
 
-        lines = []
+        from app.domains.disclosure.domain.service.disclosure_classifier import DisclosureClassifier
+
+        summary_map = summary_map or {}
+        core_lines = []
+        other_counts: dict[str, int] = {}
+
+        _TYPE_LABELS = {
+            "earnings": "실적 관련",
+            "dividend": "배당 관련",
+            "fundraising": "자금조달 관련",
+            "ownership": "임원ㆍ주요주주 소유 보고",
+            "major_event": "주요사항",
+            "unknown": "기타",
+        }
+
         for d in disclosures:
+            rcept_no = d.rcept_no if hasattr(d, "rcept_no") else ""
             rcept_dt = str(d.rcept_dt) if hasattr(d, "rcept_dt") else "N/A"
             report_nm = d.report_nm if hasattr(d, "report_nm") else "N/A"
             group = d.disclosure_group if hasattr(d, "disclosure_group") else "N/A"
-            lines.append(f"- [{rcept_dt}] {report_nm} (분류: {group})")
-        return "\n".join(lines)
+            is_core = d.is_core if hasattr(d, "is_core") else False
+
+            if is_core:
+                line = f"- [{rcept_dt}] {report_nm} (분류: {group})"
+                summary = summary_map.get(rcept_no)
+                if summary:
+                    line += f"\n  요약: {summary}"
+                core_lines.append(line)
+            else:
+                event_type = DisclosureClassifier.classify_event_type(report_nm)
+                label = _TYPE_LABELS.get(event_type, "기타")
+                other_counts[label] = other_counts.get(label, 0) + 1
+
+        parts = []
+        if core_lines:
+            parts.append(
+                f"### 핵심 공시 ({len(core_lines)}건 / 전체 {len(disclosures)}건)\n"
+                + "\n".join(core_lines)
+            )
+        if other_counts:
+            count_lines = [f"- {label}: {count}건" for label, count in other_counts.items()]
+            parts.append("### 기타 공시 현황\n" + "\n".join(count_lines))
+        return "\n\n".join(parts)
 
     @staticmethod
     def _format_rag_contexts(rag_contexts: list) -> str:
@@ -33,14 +69,14 @@ class AnalysisPromptBuilder:
 
     @classmethod
     def build_flow_analysis_prompt(
-        cls, disclosures: list, rag_contexts: list
+        cls, disclosures: list, rag_contexts: list, summary_map: dict = None,
     ) -> tuple:
         """공시 흐름 시계열 분석 프롬프트를 생성한다.
 
         Returns:
             tuple[str, str]: (사용자 프롬프트, 시스템 메시지)
         """
-        disclosure_text = cls._format_disclosures(disclosures)
+        disclosure_text = cls._format_disclosures(disclosures, summary_map)
         rag_text = cls._format_rag_contexts(rag_contexts)
 
         system_message = (
@@ -78,14 +114,14 @@ class AnalysisPromptBuilder:
 
     @classmethod
     def build_signal_analysis_prompt(
-        cls, disclosures: list, rag_contexts: list
+        cls, disclosures: list, rag_contexts: list, summary_map: dict = None,
     ) -> tuple:
         """공시 기반 투자 신호 분석 프롬프트를 생성한다.
 
         Returns:
             tuple[str, str]: (사용자 프롬프트, 시스템 메시지)
         """
-        disclosure_text = cls._format_disclosures(disclosures)
+        disclosure_text = cls._format_disclosures(disclosures, summary_map)
         rag_text = cls._format_rag_contexts(rag_contexts)
 
         system_message = (
@@ -124,14 +160,14 @@ class AnalysisPromptBuilder:
 
     @classmethod
     def build_full_analysis_prompt(
-        cls, disclosures: list, rag_contexts: list
+        cls, disclosures: list, rag_contexts: list, summary_map: dict = None,
     ) -> tuple:
         """종합 공시 분석 프롬프트를 생성한다.
 
         Returns:
             tuple[str, str]: (사용자 프롬프트, 시스템 메시지)
         """
-        disclosure_text = cls._format_disclosures(disclosures)
+        disclosure_text = cls._format_disclosures(disclosures, summary_map)
         rag_text = cls._format_rag_contexts(rag_contexts)
 
         system_message = (

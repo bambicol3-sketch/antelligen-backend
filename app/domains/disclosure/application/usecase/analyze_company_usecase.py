@@ -7,6 +7,7 @@ from typing import Optional
 
 from app.domains.disclosure.application.port.analysis_cache_port import AnalysisCachePort
 from app.domains.disclosure.application.port.dart_disclosure_api_port import DartDisclosureApiPort
+from app.domains.disclosure.application.port.disclosure_document_repository_port import DisclosureDocumentRepositoryPort
 from app.domains.disclosure.application.port.disclosure_repository_port import DisclosureRepositoryPort
 from app.domains.disclosure.application.port.embedding_port import EmbeddingPort
 from app.domains.disclosure.application.port.llm_analysis_port import LlmAnalysisPort
@@ -32,6 +33,7 @@ class AnalysisContext:
     disclosures: list = field(default_factory=list)
     rag_contexts: list = field(default_factory=list)
     filings: list = field(default_factory=list)
+    summary_map: dict = field(default_factory=dict)  # {rcept_no: summary_text}
     is_lightweight: bool = False
     registered: Optional[bool] = None
     empty: bool = False
@@ -43,6 +45,7 @@ class AnalyzeCompanyUseCase:
         self,
         analysis_cache_port: AnalysisCachePort,
         disclosure_repository_port: DisclosureRepositoryPort,
+        disclosure_document_repository_port: DisclosureDocumentRepositoryPort,
         rag_chunk_repository_port: RagChunkRepositoryPort,
         embedding_port: EmbeddingPort,
         llm_analysis_port: LlmAnalysisPort,
@@ -51,6 +54,7 @@ class AnalyzeCompanyUseCase:
     ):
         self._cache = analysis_cache_port
         self._disclosure_repo = disclosure_repository_port
+        self._doc_repo = disclosure_document_repository_port
         self._rag_repo = rag_chunk_repository_port
         self._embedding = embedding_port
         self._llm = llm_analysis_port
@@ -86,6 +90,17 @@ class AnalyzeCompanyUseCase:
         analysis_query = self._build_analysis_query(corp_code, disclosures, event_disclosures)
         rag_contexts = await self._search_rag_contexts(analysis_query, corp_code)
 
+        # 핵심 공시 원문 요약 조회 + 미생성분 LLM 요약
+        core_disclosures = [d for d in disclosures if d.is_core]
+        core_rcept_nos = [d.rcept_no for d in core_disclosures]
+        summary_map = await self._doc_repo.find_summaries_by_rcept_nos(core_rcept_nos)
+
+        # 요약이 없는 핵심 공시 → 원문이 있으면 LLM 요약 생성 후 DB 저장
+        missing_rcept_nos = [r for r in core_rcept_nos if r not in summary_map]
+        if missing_rcept_nos:
+            new_summaries = await self._generate_missing_summaries(missing_rcept_nos)
+            summary_map.update(new_summaries)
+
         # signal_analysis 시 이벤트 공시 우선 사용
         analysis_disclosures = (
             event_disclosures
@@ -108,6 +123,7 @@ class AnalyzeCompanyUseCase:
             disclosures=analysis_disclosures,
             rag_contexts=rag_contexts,
             filings=filings,
+            summary_map=summary_map,
         )
 
     async def _gather_lightweight_context(
@@ -191,7 +207,7 @@ class AnalyzeCompanyUseCase:
 
         # 프롬프트 생성 → LLM 호출
         prompt, system_message = self._build_prompt(
-            analysis_type, context.disclosures, context.rag_contexts,
+            analysis_type, context.disclosures, context.rag_contexts, context.summary_map,
         )
         llm_result = await self._call_llm_analysis(prompt, system_message)
 
@@ -247,6 +263,34 @@ class AnalyzeCompanyUseCase:
     # 내부 헬퍼
     # ------------------------------------------------------------------
 
+    async def _generate_missing_summaries(self, rcept_nos: list[str]) -> dict[str, str]:
+        """원문이 있지만 요약이 없는 핵심 공시에 대해 LLM 요약을 생성하고 DB에 저장한다."""
+        result = {}
+        for rcept_no in rcept_nos:
+            docs = await self._doc_repo.find_by_rcept_no(rcept_no)
+            if not docs:
+                continue
+            # 원문이 있는 첫 번째 문서 사용
+            doc = next((d for d in docs if d.raw_text and len(d.raw_text) > 100), None)
+            if not doc:
+                continue
+            try:
+                # 원문 앞부분 3000자로 제한하여 요약 요청
+                raw_excerpt = doc.raw_text[:3000]
+                summary = await self._llm.analyze(
+                    prompt=f"다음 공시 원문을 3~5문장으로 핵심만 요약해주세요. 숫자와 금액은 반드시 포함하세요.\n\n{raw_excerpt}",
+                    system_message="당신은 한국 금융 공시 요약 전문가입니다. 간결하고 정확하게 요약하세요. 요약문만 출력하세요.",
+                )
+                summary = summary.strip()[:500]
+                # DB에 요약문 저장 (다음 요청 시 재사용)
+                doc.summary_text = summary
+                await self._doc_repo.upsert(doc)
+                result[rcept_no] = summary
+                logger.info("LLM 요약 생성 완료: rcept_no=%s (%d자)", rcept_no, len(summary))
+            except Exception as e:
+                logger.warning("LLM 요약 생성 실패: rcept_no=%s, %s", rcept_no, e)
+        return result
+
     @staticmethod
     def _build_analysis_query(corp_code: str, disclosures: list, event_disclosures: list) -> str:
         parts = [f"기업코드 {corp_code} 공시 분석"]
@@ -267,13 +311,13 @@ class AnalyzeCompanyUseCase:
             return []
 
     @staticmethod
-    def _build_prompt(analysis_type: str, disclosures: list, rag_contexts: list) -> tuple:
+    def _build_prompt(analysis_type: str, disclosures: list, rag_contexts: list, summary_map: dict = None) -> tuple:
         if analysis_type == "flow_analysis":
-            return AnalysisPromptBuilder.build_flow_analysis_prompt(disclosures, rag_contexts)
+            return AnalysisPromptBuilder.build_flow_analysis_prompt(disclosures, rag_contexts, summary_map)
         elif analysis_type == "signal_analysis":
-            return AnalysisPromptBuilder.build_signal_analysis_prompt(disclosures, rag_contexts)
+            return AnalysisPromptBuilder.build_signal_analysis_prompt(disclosures, rag_contexts, summary_map)
         else:
-            return AnalysisPromptBuilder.build_full_analysis_prompt(disclosures, rag_contexts)
+            return AnalysisPromptBuilder.build_full_analysis_prompt(disclosures, rag_contexts, summary_map)
 
     async def _call_llm_analysis(self, prompt: str, system_message: str) -> dict:
         try:

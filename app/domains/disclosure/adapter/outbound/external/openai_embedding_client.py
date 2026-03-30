@@ -23,7 +23,6 @@ class OpenAIEmbeddingClient(EmbeddingPort):
         response = await self._client.embeddings.create(
             model=EMBEDDING_MODEL,
             input=text,
-            dimensions=EMBEDDING_DIMENSIONS,
         )
         return response.data[0].embedding
 
@@ -42,7 +41,6 @@ class OpenAIEmbeddingClient(EmbeddingPort):
             response = await self._client.embeddings.create(
                 model=EMBEDDING_MODEL,
                 input=batch,
-                dimensions=EMBEDDING_DIMENSIONS,
             )
             # API 응답의 index 순서로 정렬하여 입력 순서 보장
             sorted_data = sorted(response.data, key=lambda x: x.index)

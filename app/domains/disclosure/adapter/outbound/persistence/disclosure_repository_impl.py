@@ -1,7 +1,7 @@
 from datetime import date
 from typing import Optional
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, exists as sa_exists
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -88,3 +88,24 @@ class DisclosureRepositoryImpl(DisclosureRepositoryPort):
         )
         result = await self._db.execute(stmt)
         return result.scalar_one() > 0
+
+    async def find_unprocessed_core(self, limit: int = 50) -> list[Disclosure]:
+        from app.domains.disclosure.infrastructure.orm.disclosure_document_orm import (
+            DisclosureDocumentOrm,
+        )
+        # 핵심 공시 중 disclosure_documents에 아직 레코드가 없는 것
+        already_processed = (
+            select(DisclosureDocumentOrm.rcept_no)
+            .where(DisclosureDocumentOrm.summary_text.isnot(None))
+        )
+        stmt = (
+            select(DisclosureOrm)
+            .where(
+                DisclosureOrm.is_core.is_(True),
+                ~DisclosureOrm.rcept_no.in_(already_processed),
+            )
+            .order_by(DisclosureOrm.rcept_dt.desc())
+            .limit(limit)
+        )
+        result = await self._db.execute(stmt)
+        return [DisclosureMapper.to_entity(orm) for orm in result.scalars().all()]

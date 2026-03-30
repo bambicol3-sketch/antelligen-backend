@@ -408,3 +408,6 @@ pyrightconfig.json
 
 # exclude .DS_Store
 .DS_Store
+
+# Application logs
+logs/

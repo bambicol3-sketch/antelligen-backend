@@ -23,3 +23,12 @@ class DisclosureDocumentRepositoryPort(ABC):
     @abstractmethod
     async def find_not_stored_in_rag(self, limit: int = 100) -> list[DisclosureDocument]:
         pass
+
+    @abstractmethod
+    async def find_summaries_by_rcept_nos(self, rcept_nos: list[str]) -> dict[str, str]:
+        """rcept_no 목록에 대한 요약문을 일괄 조회한다.
+
+        Returns:
+            dict[str, str]: {rcept_no: summary_text} 매핑. 요약이 없는 건은 제외.
+        """
+        pass

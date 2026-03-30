@@ -28,3 +28,8 @@ class DisclosureRepositoryPort(ABC):
     @abstractmethod
     async def exists_by_rcept_no(self, rcept_no: str) -> bool:
         pass
+
+    @abstractmethod
+    async def find_unprocessed_core(self, limit: int = 50) -> list[Disclosure]:
+        """핵심 공시 중 아직 문서 처리되지 않은 것을 조회한다."""
+        pass
