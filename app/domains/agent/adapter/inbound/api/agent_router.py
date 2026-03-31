@@ -1,11 +1,15 @@
-from fastapi import APIRouter
+import redis.asyncio as aioredis
+from fastapi import APIRouter, Depends
 
 from app.common.response.base_response import BaseResponse
+from app.domains.agent.adapter.outbound.cache.redis_finance_analysis_cache import (
+    RedisFinanceAnalysisCache,
+)
+from app.domains.agent.adapter.outbound.external.langgraph_finance_agent_provider import (
+    LangGraphFinanceAgentProvider,
+)
 from app.domains.agent.adapter.outbound.external.mock_sub_agent_provider import (
     MockSubAgentProvider,
-)
-from app.domains.agent.adapter.outbound.external.openai_finance_agent_provider import (
-    OpenAIFinanceAgentProvider,
 )
 from app.domains.agent.application.request.agent_query_request import AgentQueryRequest
 from app.domains.agent.application.request.finance_analysis_request import (
@@ -29,6 +33,7 @@ from app.domains.stock.adapter.outbound.persistence.stock_vector_repository_impl
 from app.domains.stock.application.usecase.get_stored_stock_data_usecase import (
     GetStoredStockDataUseCase,
 )
+from app.infrastructure.cache.redis_client import get_redis
 from app.infrastructure.config.settings import get_settings
 
 router = APIRouter(prefix="/agent", tags=["Agent"])
@@ -54,6 +59,7 @@ async def query_agent(request: AgentQueryRequest):
 )
 async def analyze_finance(
     request: FinanceAnalysisRequest,
+    redis: aioredis.Redis = Depends(get_redis),
 ):
     """
     벡터 DB에 저장된 데이터를 기반으로 재무 분석을 수행합니다.
@@ -69,15 +75,25 @@ async def analyze_finance(
         stock_vector_repository=stock_vector_repository,
     )
 
-    finance_provider = OpenAIFinanceAgentProvider(
+    finance_provider = LangGraphFinanceAgentProvider(
         api_key=settings.openai_api_key,
-        model=settings.openai_finance_agent_model,
+        chat_model=settings.openai_finance_agent_model,
+        embedding_model=settings.openai_embedding_model,
+        top_k=settings.finance_rag_top_k,
+        langsmith_tracing=settings.langsmith_tracing,
+        langsmith_api_key=settings.langsmith_api_key,
+        langsmith_project=settings.langsmith_project,
+        langsmith_endpoint=settings.langsmith_endpoint,
     )
 
     usecase = AnalyzeFinanceAgentUseCase(
         stock_repository=stock_repository,
         get_stored_stock_data_usecase=get_stored_stock_data_usecase,
         finance_agent_provider=finance_provider,
+        finance_analysis_cache=RedisFinanceAnalysisCache(
+            redis=redis,
+            ttl_seconds=settings.finance_analysis_cache_ttl_seconds,
+        ),
     )
     internal_result = await usecase.execute(request)
     frontend_result = FrontendAgentResponse.from_internal(internal_result)
