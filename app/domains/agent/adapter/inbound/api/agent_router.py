@@ -1,15 +1,28 @@
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.response.base_response import BaseResponse
 from app.domains.agent.adapter.outbound.cache.redis_finance_analysis_cache import (
     RedisFinanceAnalysisCache,
 )
+from app.domains.agent.adapter.outbound.external.disclosure_sub_agent_adapter import (
+    DisclosureSubAgentAdapter,
+)
+from app.domains.agent.adapter.outbound.external.finance_sub_agent_adapter import (
+    FinanceSubAgentAdapter,
+)
 from app.domains.agent.adapter.outbound.external.langgraph_finance_agent_provider import (
     LangGraphFinanceAgentProvider,
 )
-from app.domains.agent.adapter.outbound.external.mock_sub_agent_provider import (
-    MockSubAgentProvider,
+from app.domains.agent.adapter.outbound.external.news_sub_agent_adapter import (
+    NewsSubAgentAdapter,
+)
+from app.domains.agent.adapter.outbound.external.openai_synthesis_client import (
+    OpenAISynthesisClient,
+)
+from app.domains.agent.adapter.outbound.persistence.integrated_analysis_repository_impl import (
+    IntegratedAnalysisRepositoryImpl,
 )
 from app.domains.agent.application.request.agent_query_request import AgentQueryRequest
 from app.domains.agent.application.request.finance_analysis_request import (
@@ -17,6 +30,9 @@ from app.domains.agent.application.request.finance_analysis_request import (
 )
 from app.domains.agent.application.response.frontend_agent_response import (
     FrontendAgentResponse,
+)
+from app.domains.agent.application.response.integrated_analysis_response import (
+    IntegratedAnalysisResponse,
 )
 from app.domains.agent.application.usecase.analyze_finance_agent_usecase import (
     AnalyzeFinanceAgentUseCase,
@@ -35,6 +51,7 @@ from app.domains.stock.application.usecase.get_stored_stock_data_usecase import 
 )
 from app.infrastructure.cache.redis_client import get_redis
 from app.infrastructure.config.settings import get_settings
+from app.infrastructure.database.database import get_db
 
 router = APIRouter(prefix="/agent", tags=["Agent"])
 
@@ -44,12 +61,40 @@ router = APIRouter(prefix="/agent", tags=["Agent"])
     response_model=BaseResponse[FrontendAgentResponse],
     status_code=200,
 )
-async def query_agent(request: AgentQueryRequest):
-    provider = MockSubAgentProvider()
-    usecase = ProcessAgentQueryUseCase(provider)
-    internal_result = usecase.execute(request)
+async def query_agent(
+    request: AgentQueryRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    settings = get_settings()
+    repository = IntegratedAnalysisRepositoryImpl(db)
+    llm_synthesis = OpenAISynthesisClient(api_key=settings.openai_api_key)
+
+    usecase = ProcessAgentQueryUseCase(
+        news_agent=NewsSubAgentAdapter(),
+        disclosure_agent=DisclosureSubAgentAdapter(),
+        finance_agent=FinanceSubAgentAdapter(),
+        llm_synthesis=llm_synthesis,
+        repository=repository,
+    )
+    internal_result = await usecase.execute(request)
     frontend_result = FrontendAgentResponse.from_internal(internal_result)
     return BaseResponse.ok(data=frontend_result)
+
+
+@router.get(
+    "/history",
+    response_model=BaseResponse[list[IntegratedAnalysisResponse]],
+    status_code=200,
+)
+async def get_analysis_history(
+    ticker: str = Query(..., description="종목 코드 (예: 005930)"),
+    limit: int = Query(default=10, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+):
+    """ticker 기준 최근 통합 분석 이력을 반환합니다."""
+    repository = IntegratedAnalysisRepositoryImpl(db)
+    history = await repository.find_history(ticker, limit=limit)
+    return BaseResponse.ok(data=history)
 
 
 @router.post(
@@ -69,7 +114,6 @@ async def analyze_finance(
     stock_repository = StockRepositoryImpl()
     stock_vector_repository = StockVectorRepositoryImpl()
 
-    # 저장된 데이터 조회 UseCase
     get_stored_stock_data_usecase = GetStoredStockDataUseCase(
         stock_repository=stock_repository,
         stock_vector_repository=stock_vector_repository,

@@ -202,7 +202,8 @@ class DisclosureAnalysisGraph:
             analysis_disclosures = disclosures
 
         # Build RAG query
-        query = self._build_analysis_query(corp_code, disclosures, event_disclosures)
+        ticker = state["ticker"]
+        query = self._build_analysis_query(ticker, disclosures, event_disclosures)
 
         # Embed and search
         try:
@@ -240,7 +241,8 @@ class DisclosureAnalysisGraph:
             new_summaries = await self._generate_missing_summaries(missing)
             summary_map.update(new_summaries)
 
-        logger.info("[Agent][fetch_summaries] Summaries: %d found, %d generated", len(summary_map) - len(missing), len(missing))
+        found_count = len(summary_map) - len(missing)
+        logger.info("[Agent][fetch_summaries] Summaries: %d found, %d generated", max(found_count, 0), len(missing))
         return {"summary_map": summary_map}
 
     # ------------------------------------------------------------------
@@ -394,6 +396,7 @@ class DisclosureAnalysisGraph:
 
         return {"core": core, "other_summary": other_counts}
 
+
     async def _generate_missing_summaries(self, rcept_nos: list[str]) -> dict[str, str]:
         result = {}
         for rcept_no in rcept_nos:
@@ -418,13 +421,13 @@ class DisclosureAnalysisGraph:
         return result
 
     @staticmethod
-    def _build_analysis_query(corp_code: str, disclosures: list, event_disclosures: list) -> str:
-        parts = [f"corp_code {corp_code} disclosure analysis"]
+    def _build_analysis_query(ticker: str, disclosures: list, event_disclosures: list) -> str:
+        # 의미 기반 임베딩 검색에 적합한 자연어 쿼리 생성
+        base = f"{ticker} 사업현황 위험요소 성장전략 경영실적 주요사업"
         if event_disclosures:
-            parts.append(" ".join(d.report_nm for d in event_disclosures[:5]))
-        elif disclosures:
-            parts.append(" ".join(d.report_nm for d in disclosures[:3]))
-        return " ".join(parts)
+            events_text = " ".join(d.report_nm for d in event_disclosures[:3])
+            return f"{base} {events_text}"
+        return base
 
     @staticmethod
     def _build_prompt(analysis_type: str, disclosures: list, rag_contexts: list, summary_map: dict = None) -> tuple:

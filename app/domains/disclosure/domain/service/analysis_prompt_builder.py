@@ -80,9 +80,10 @@ class AnalysisPromptBuilder:
         rag_text = cls._format_rag_contexts(rag_contexts)
 
         system_message = (
-            "당신은 한국 주식 시장의 공시 분석 전문가입니다. "
-            "공시 데이터를 시계열로 분석하여 기업의 흐름과 변화를 파악합니다. "
-            "반드시 한국어로 답변하고, JSON 형식으로 출력하세요."
+            "당신은 한국 주식 시장의 공시 흐름 분석 전문가입니다. "
+            "공시 데이터를 시계열로 분석하되, 구체적인 날짜와 수치를 기반으로 분석합니다. "
+            "RAG 참고 자료가 있으면 구체적 내용을 인용하세요. "
+            "반드시 한국어로 답변하고, JSON 형식으로만 출력하세요."
         )
 
         prompt = f"""다음 기업의 공시 목록을 시계열로 분석하여 주요 흐름과 변화를 파악해주세요.
@@ -125,35 +126,36 @@ class AnalysisPromptBuilder:
         rag_text = cls._format_rag_contexts(rag_contexts)
 
         system_message = (
-            "당신은 한국 주식 시장의 투자 신호 분석 전문가입니다. "
-            "공시 데이터를 기반으로 투자에 유의미한 신호를 분석합니다. "
-            "반드시 한국어로 답변하고, JSON 형식으로 출력하세요."
+            "당신은 한국 주식 공시 기반 투자 신호 분석 전문가입니다. "
+            "공시 데이터와 RAG 참고 자료의 구체적 수치를 인용하여 투자 신호를 도출하세요. "
+            "추상적 표현 대신 날짜, 금액, 비율 등 검증 가능한 사실만 사용하세요. "
+            "반드시 한국어로 답변하고, JSON 형식으로만 출력하세요."
         )
 
         prompt = f"""다음 기업의 공시 데이터를 분석하여 투자 신호를 도출해주세요.
+RAG 참고 자료에서 확인된 수치와 사실만 사용하고, 근거 없는 추측은 하지 마세요.
 
 ## 공시 목록
 {disclosure_text}
 
-## 참고 자료 (RAG 검색 결과)
+## RAG 참고 자료 (원문 발췌)
 {rag_text}
 
 ## 출력 형식 (JSON)
-다음 JSON 형식으로 출력해주세요:
 {{
-    "overall_signal": "종합 신호 (bullish/bearish/neutral)",
-    "confidence": "신뢰도 (0.0 ~ 1.0)",
+    "overall_signal": "bullish/bearish/neutral",
+    "confidence": 0.0~1.0,
     "signals": [
         {{
-            "type": "신호 유형 (earnings/dividend/fundraising/ownership/major_event)",
-            "direction": "방향 (positive/negative/neutral)",
-            "strength": "강도 (strong/moderate/weak)",
-            "description": "신호 설명",
-            "based_on": "근거 공시"
+            "type": "earnings/dividend/fundraising/ownership/major_event",
+            "direction": "positive/negative/neutral",
+            "strength": "strong/moderate/weak",
+            "description": "구체적 근거 포함 설명 (수치/날짜 인용)",
+            "based_on": "근거 공시명"
         }}
     ],
-    "investment_summary": "투자 관점 요약",
-    "cautions": ["유의사항 1", "유의사항 2"]
+    "investment_summary": "수치 기반 투자 관점 요약",
+    "cautions": ["구체적 유의사항 1", "구체적 유의사항 2"]
 }}"""
 
         return prompt, system_message
@@ -171,47 +173,54 @@ class AnalysisPromptBuilder:
         rag_text = cls._format_rag_contexts(rag_contexts)
 
         system_message = (
-            "당신은 한국 주식 시장의 공시 분석 전문가입니다. "
-            "공시 데이터를 종합적으로 분석하여 시계열 흐름, 투자 신호, "
-            "리스크 요인을 통합 평가합니다. "
-            "반드시 한국어로 답변하고, JSON 형식으로 출력하세요."
+            "당신은 한국 주식 공시 전문 분석가입니다. "
+            "제공된 공시 목록과 RAG 참고 자료(사업보고서 발췌)를 바탕으로 분석하세요. "
+            "RAG 자료는 재무제표 숫자가 아닌 사업 현황, 위험 요소, 전략적 내용을 담고 있을 수 있습니다. "
+            "수치가 없더라도 사업 내용과 공시 이벤트 기반으로 투자 신호를 도출할 수 있습니다. "
+            "'안정적인 재무 구조', '투명한 지배구조' 같은 근거 없는 추상적 표현은 사용하지 마세요. "
+            "확인된 사실과 공시 내용만 기술하고, 반드시 한국어로 JSON 형식으로만 출력하세요."
         )
 
-        prompt = f"""다음 기업의 공시 데이터를 종합적으로 분석해주세요.
+        prompt = f"""다음 기업의 공시 데이터를 분석하세요. RAG 참고 자료에 구체적인 수치나 내용이 있으면 반드시 인용하세요.
 
 ## 공시 목록
 {disclosure_text}
 
-## 참고 자료 (RAG 검색 결과)
+## RAG 참고 자료 (사업보고서 등 원문 발췌)
 {rag_text}
 
+## 분석 지침
+- key_events: 실제 공시된 날짜와 내용을 기반으로 작성 (예: "2026-03-10 사업보고서 제출")
+- signals: 공시 목록과 RAG 자료에서 확인된 사실 기반으로 작성 (사업 전략, 위험 요소, 주요 이벤트 등)
+- risk_factors: 공시 및 사업보고서 내용에서 파악한 실제 리스크 기술 (규제, 경쟁, 시장 위험 등)
+- positive_signals: 공시 및 사업보고서 내용에서 파악한 긍정 요인 기술 (사업 확장, 신규 투자, 성장 동력 등)
+- RAG 자료에 재무 수치가 없더라도 사업 내용, 위험 요소, 전략 정보가 있으면 confidence 0.6 이상 가능
+- investment_summary: 공시 이벤트와 사업 현황을 종합한 투자 관점 요약
+
 ## 출력 형식 (JSON)
-다음 JSON 형식으로 출력해주세요:
 {{
-    "company_overview": "기업 공시 현황 요약",
-    "timeline_summary": "시계열 흐름 요약",
+    "company_overview": "공시 기반 기업 현황 (구체적 수치 포함)",
     "key_events": [
         {{
             "date": "날짜",
-            "event": "이벤트 설명",
-            "significance": "중요도 (high/medium/low)",
-            "detail": "상세 분석"
+            "event": "구체적 이벤트 (수치 포함)",
+            "significance": "high/medium/low",
+            "detail": "RAG 자료 인용 포함 상세 분석"
         }}
     ],
-    "overall_signal": "종합 투자 신호 (bullish/bearish/neutral)",
-    "confidence": "신뢰도 (0.0 ~ 1.0)",
+    "overall_signal": "bullish/bearish/neutral",
+    "confidence": 0.0~1.0,
     "signals": [
         {{
             "type": "신호 유형",
-            "direction": "방향 (positive/negative/neutral)",
-            "strength": "강도 (strong/moderate/weak)",
-            "description": "신호 설명"
+            "direction": "positive/negative/neutral",
+            "strength": "strong/moderate/weak",
+            "description": "근거 공시 및 수치 포함 설명"
         }}
     ],
-    "risk_factors": ["위험 요소 1", "위험 요소 2"],
-    "positive_signals": ["긍정 신호 1", "긍정 신호 2"],
-    "investment_summary": "투자 관점 종합 요약",
-    "disclaimer": "본 분석은 공시 데이터 기반의 참고 자료이며, 투자 판단의 책임은 투자자에게 있습니다."
+    "risk_factors": ["구체적 리스크 1 (수치/날짜 포함)", "구체적 리스크 2"],
+    "positive_signals": ["구체적 긍정 요인 1 (수치/날짜 포함)", "구체적 긍정 요인 2"],
+    "investment_summary": "수치 기반 투자 관점 종합 요약 (2~3문장)"
 }}"""
 
         return prompt, system_message

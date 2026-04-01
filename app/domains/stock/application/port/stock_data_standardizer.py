@@ -15,5 +15,11 @@ class StockDataStandardizer(ABC):
         dart_roa: float | None = None,
         dart_debt_ratio: float | None = None,
         dart_fiscal_year: str | None = None,
+        dart_sales: float | None = None,
+        dart_operating_income: float | None = None,
+        dart_net_income: float | None = None,
+        dart_prev_sales: float | None = None,
+        dart_prev_operating_income: float | None = None,
+        dart_prev_net_income: float | None = None,
     ) -> CollectedStockData | None:
         pass

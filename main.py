@@ -29,6 +29,7 @@ import app.domains.disclosure.infrastructure.orm.disclosure_document_orm  # noqa
 import app.domains.disclosure.infrastructure.orm.collection_job_orm  # noqa: F401
 import app.domains.disclosure.infrastructure.orm.collection_job_item_orm  # noqa: F401
 import app.domains.disclosure.infrastructure.orm.rag_document_chunk_orm  # noqa: F401
+import app.domains.agent.infrastructure.orm.integrated_analysis_orm  # noqa: F401
 
 setup_logging()
 configure_langsmith()

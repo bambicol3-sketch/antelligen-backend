@@ -79,6 +79,12 @@ class CollectStockDataUseCase:
         dart_roa = None
         dart_debt_ratio = None
         dart_fiscal_year = None
+        dart_sales = None
+        dart_operating_income = None
+        dart_net_income = None
+        dart_prev_sales = None
+        dart_prev_operating_income = None
+        dart_prev_net_income = None
         if self._dart_financial_ratios_usecase:
             try:
                 dart_result = await self._dart_financial_ratios_usecase.execute(
@@ -89,12 +95,21 @@ class CollectStockDataUseCase:
                     dart_roa = dart_result.roa
                     dart_debt_ratio = dart_result.debt_ratio
                     dart_fiscal_year = dart_result.fiscal_year
+                    dart_sales = dart_result.sales
+                    dart_operating_income = dart_result.operating_income
+                    dart_net_income = dart_result.net_income
+                    dart_prev_sales = dart_result.prev_sales
+                    dart_prev_operating_income = dart_result.prev_operating_income
+                    dart_prev_net_income = dart_result.prev_net_income
                     logger.info(
-                        "[Stock Collect] DART 재무비율 조회 성공 - ticker=%s roe=%s roa=%s debt_ratio=%s",
+                        "[Stock Collect] DART 재무비율 조회 성공 - ticker=%s roe=%s roa=%s debt_ratio=%s sales=%s operating_income=%s net_income=%s",
                         stock.ticker,
                         dart_roe,
                         dart_roa,
                         dart_debt_ratio,
+                        dart_sales,
+                        dart_operating_income,
+                        dart_net_income,
                     )
             except Exception as e:
                 logger.warning(
@@ -109,6 +124,12 @@ class CollectStockDataUseCase:
             dart_roa=dart_roa,
             dart_debt_ratio=dart_debt_ratio,
             dart_fiscal_year=dart_fiscal_year,
+            dart_sales=dart_sales,
+            dart_operating_income=dart_operating_income,
+            dart_net_income=dart_net_income,
+            dart_prev_sales=dart_prev_sales,
+            dart_prev_operating_income=dart_prev_operating_income,
+            dart_prev_net_income=dart_prev_net_income,
         )
         if collected_data is None:
             logger.error(
@@ -213,6 +234,12 @@ class CollectStockDataUseCase:
                 roa=collected_data.dart_roa,
                 debt_ratio=collected_data.dart_debt_ratio,
                 fiscal_year=collected_data.dart_fiscal_year,
+                sales=collected_data.dart_sales,
+                operating_income=collected_data.dart_operating_income,
+                net_income=collected_data.dart_net_income,
+                prev_sales=collected_data.dart_prev_sales,
+                prev_operating_income=collected_data.dart_prev_operating_income,
+                prev_net_income=collected_data.dart_prev_net_income,
             )
 
         return StockCollectionResponse(

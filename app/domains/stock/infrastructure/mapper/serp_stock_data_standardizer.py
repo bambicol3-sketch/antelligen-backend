@@ -18,6 +18,12 @@ class SerpStockDataStandardizer(StockDataStandardizer):
         dart_roa: float | None = None,
         dart_debt_ratio: float | None = None,
         dart_fiscal_year: str | None = None,
+        dart_sales: float | None = None,
+        dart_operating_income: float | None = None,
+        dart_net_income: float | None = None,
+        dart_prev_sales: float | None = None,
+        dart_prev_operating_income: float | None = None,
+        dart_prev_net_income: float | None = None,
     ) -> CollectedStockData | None:
         payload = raw_data.raw_payload
         summary = self._extract_summary(payload)
@@ -62,6 +68,12 @@ class SerpStockDataStandardizer(StockDataStandardizer):
             dart_roa=dart_roa,
             dart_debt_ratio=dart_debt_ratio,
             dart_fiscal_year=dart_fiscal_year,
+            dart_sales=dart_sales,
+            dart_operating_income=dart_operating_income,
+            dart_net_income=dart_net_income,
+            dart_prev_sales=dart_prev_sales,
+            dart_prev_operating_income=dart_prev_operating_income,
+            dart_prev_net_income=dart_prev_net_income,
         )
 
         collected_types = self._determine_collected_types(
@@ -105,6 +117,12 @@ class SerpStockDataStandardizer(StockDataStandardizer):
             dart_roa=dart_roa,
             dart_debt_ratio=dart_debt_ratio,
             dart_fiscal_year=dart_fiscal_year,
+            dart_sales=dart_sales,
+            dart_operating_income=dart_operating_income,
+            dart_net_income=dart_net_income,
+            dart_prev_sales=dart_prev_sales,
+            dart_prev_operating_income=dart_prev_operating_income,
+            dart_prev_net_income=dart_prev_net_income,
         )
 
     def _extract_summary(self, data: dict) -> dict:
@@ -206,6 +224,12 @@ class SerpStockDataStandardizer(StockDataStandardizer):
         dart_roa: float | None = None,
         dart_debt_ratio: float | None = None,
         dart_fiscal_year: str | None = None,
+        dart_sales: float | None = None,
+        dart_operating_income: float | None = None,
+        dart_net_income: float | None = None,
+        dart_prev_sales: float | None = None,
+        dart_prev_operating_income: float | None = None,
+        dart_prev_net_income: float | None = None,
     ) -> str | None:
         lines = [
             f"Ticker: {ticker}",
@@ -241,6 +265,22 @@ class SerpStockDataStandardizer(StockDataStandardizer):
                 lines.append(f"ROA (총자산이익률): {dart_roa}%")
             if dart_debt_ratio is not None:
                 lines.append(f"부채비율: {dart_debt_ratio}%")
+            if dart_sales is not None:
+                lines.append(f"매출액: {dart_sales/1e8:.0f}억원")
+            if dart_operating_income is not None:
+                lines.append(f"영업이익: {dart_operating_income/1e8:.0f}억원")
+            if dart_net_income is not None:
+                lines.append(f"당기순이익: {dart_net_income/1e8:.0f}억원")
+            # 전기 대비 증감률
+            if dart_prev_sales is not None and dart_sales is not None and dart_prev_sales != 0:
+                sales_growth = (dart_sales - dart_prev_sales) / abs(dart_prev_sales) * 100
+                lines.append(f"매출 증감률(전기 대비): {sales_growth:+.1f}%")
+            if dart_prev_operating_income is not None and dart_operating_income is not None and dart_prev_operating_income != 0:
+                oi_growth = (dart_operating_income - dart_prev_operating_income) / abs(dart_prev_operating_income) * 100
+                lines.append(f"영업이익 증감률(전기 대비): {oi_growth:+.1f}%")
+            if dart_prev_net_income is not None and dart_net_income is not None and dart_prev_net_income != 0:
+                ni_growth = (dart_net_income - dart_prev_net_income) / abs(dart_prev_net_income) * 100
+                lines.append(f"당기순이익 증감률(전기 대비): {ni_growth:+.1f}%")
 
         if len(lines) <= 3:
             return None

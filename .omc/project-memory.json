@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1774958560034,
+  "lastScanned": 1775045339872,
   "projectRoot": "D:\\Documents\\simsys\\ai_agent_edu_dev\\stock-supporters-backend",
   "techStack": {
     "languages": [
@@ -48,7 +48,7 @@
       "path": "app",
       "purpose": "Application code",
       "fileCount": 1,
-      "lastAccessed": 1774958559966,
+      "lastAccessed": 1775045339823,
       "keyFiles": [
         "__init__.py"
       ]
@@ -56,17 +56,30 @@
     "docs": {
       "path": "docs",
       "purpose": "Documentation",
-      "fileCount": 1,
-      "lastAccessed": 1774958559967,
+      "fileCount": 4,
+      "lastAccessed": 1775045339823,
       "keyFiles": [
-        "agent_schema.md"
+        "agent_schema.md",
+        "disclosure-strategy.md",
+        "frontend-plan-prompt.md",
+        "main-agent.md"
+      ]
+    },
+    "logs": {
+      "path": "logs",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1775045339823,
+      "keyFiles": [
+        "20260331-app.log",
+        "app.log"
       ]
     },
     "__pycache__": {
       "path": "__pycache__",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1774958559967,
+      "lastAccessed": 1775045339824,
       "keyFiles": [
         "main.cpython-313.pyc"
       ]
@@ -74,27 +87,303 @@
   },
   "hotPaths": [
     {
-      "path": "app\\infrastructure\\config\\settings.py",
-      "accessCount": 2,
-      "lastAccessed": 1774958975696,
+      "path": "app\\domains\\disclosure\\application\\usecase\\analysis_agent_graph.py",
+      "accessCount": 24,
+      "lastAccessed": 1775050917245,
       "type": "file"
+    },
+    {
+      "path": "app\\domains\\stock\\infrastructure\\mapper\\serp_stock_data_standardizer.py",
+      "accessCount": 14,
+      "lastAccessed": 1775050123745,
+      "type": "file"
+    },
+    {
+      "path": "app\\domains\\stock\\adapter\\outbound\\external\\opendart_financial_data_provider.py",
+      "accessCount": 11,
+      "lastAccessed": 1775050565212,
+      "type": "file"
+    },
+    {
+      "path": "app\\domains\\stock\\application\\usecase\\collect_stock_data_usecase.py",
+      "accessCount": 9,
+      "lastAccessed": 1775050145769,
+      "type": "file"
+    },
+    {
+      "path": "app\\domains\\disclosure\\application\\service\\disclosure_analysis_service.py",
+      "accessCount": 8,
+      "lastAccessed": 1775049167535,
+      "type": "file"
+    },
+    {
+      "path": "app\\domains\\stock\\application\\usecase\\get_stored_stock_data_usecase.py",
+      "accessCount": 7,
+      "lastAccessed": 1775050021721,
+      "type": "file"
+    },
+    {
+      "path": "app\\domains\\stock\\domain\\entity\\collected_stock_data.py",
+      "accessCount": 6,
+      "lastAccessed": 1775050082323,
+      "type": "file"
+    },
+    {
+      "path": "app\\domains\\agent\\application\\usecase\\process_agent_query_usecase.py",
+      "accessCount": 5,
+      "lastAccessed": 1775046733853,
+      "type": "file"
+    },
+    {
+      "path": "app\\domains\\stock\\domain\\entity\\financial_ratio.py",
+      "accessCount": 5,
+      "lastAccessed": 1775050029310,
+      "type": "file"
+    },
+    {
+      "path": "app\\domains\\stock\\application\\response\\dart_financial_ratio_response.py",
+      "accessCount": 5,
+      "lastAccessed": 1775050031681,
+      "type": "file"
+    },
+    {
+      "path": "app\\domains\\stock\\application\\response\\stock_collection_response.py",
+      "accessCount": 5,
+      "lastAccessed": 1775050035524,
+      "type": "file"
+    },
+    {
+      "path": "app\\domains\\stock\\application\\usecase\\fetch_dart_financial_ratios_usecase.py",
+      "accessCount": 5,
+      "lastAccessed": 1775050068039,
+      "type": "file"
+    },
+    {
+      "path": "app\\domains\\stock\\application\\port\\stock_data_standardizer.py",
+      "accessCount": 4,
+      "lastAccessed": 1775050083948,
+      "type": "file"
+    },
+    {
+      "path": "",
+      "accessCount": 4,
+      "lastAccessed": 1775051882996,
+      "type": "directory"
+    },
+    {
+      "path": "app\\domains\\disclosure\\adapter\\outbound\\persistence\\rag_chunk_repository_impl.py",
+      "accessCount": 3,
+      "lastAccessed": 1775046399607,
+      "type": "file"
+    },
+    {
+      "path": "app",
+      "accessCount": 3,
+      "lastAccessed": 1775049059682,
+      "type": "directory"
+    },
+    {
+      "path": "app\\domains\\agent\\adapter\\outbound\\external\\langgraph_finance_agent_provider.py",
+      "accessCount": 3,
+      "lastAccessed": 1775049365161,
+      "type": "file"
+    },
+    {
+      "path": "app/domains/disclosure/application/usecase/analysis_agent_graph.py",
+      "accessCount": 2,
+      "lastAccessed": 1775048980758,
+      "type": "directory"
+    },
+    {
+      "path": "docs\\disclosure-strategy.md",
+      "accessCount": 2,
+      "lastAccessed": 1775049034359,
+      "type": "file"
+    },
+    {
+      "path": "app\\domains\\disclosure\\adapter\\inbound\\api\\disclosure_router.py",
+      "accessCount": 2,
+      "lastAccessed": 1775049181406,
+      "type": "file"
+    },
+    {
+      "path": "app\\domains\\agent\\adapter\\outbound\\external\\finance_sub_agent_adapter.py",
+      "accessCount": 2,
+      "lastAccessed": 1775049326894,
+      "type": "file"
+    },
+    {
+      "path": "app\\domains\\agent\\adapter\\inbound\\api\\agent_router.py",
+      "accessCount": 2,
+      "lastAccessed": 1775049327369,
+      "type": "file"
+    },
+    {
+      "path": "app\\domains\\agent\\application\\usecase\\analyze_finance_agent_usecase.py",
+      "accessCount": 2,
+      "lastAccessed": 1775049339631,
+      "type": "file"
+    },
+    {
+      "path": "app\\domains\\agent\\adapter\\outbound\\external\\disclosure_sub_agent_adapter.py",
+      "accessCount": 2,
+      "lastAccessed": 1775049510335,
+      "type": "file"
+    },
+    {
+      "path": "app\\infrastructure\\scheduler\\disclosure_jobs.py",
+      "accessCount": 2,
+      "lastAccessed": 1775050790353,
+      "type": "file"
+    },
+    {
+      "path": "docs\\frontend-plan-prompt.md",
+      "accessCount": 2,
+      "lastAccessed": 1775051163193,
+      "type": "file"
+    },
+    {
+      "path": "app\\domains\\agent\\application\\response\\sub_agent_response.py",
+      "accessCount": 1,
+      "lastAccessed": 1775045398403,
+      "type": "file"
+    },
+    {
+      "path": "app\\domains\\agent\\application\\response\\frontend_agent_response.py",
+      "accessCount": 1,
+      "lastAccessed": 1775045398801,
+      "type": "file"
+    },
+    {
+      "path": "app\\domains\\agent\\adapter\\outbound\\external\\news_sub_agent_adapter.py",
+      "accessCount": 1,
+      "lastAccessed": 1775045408276,
+      "type": "file"
+    },
+    {
+      "path": "app\\domains\\agent\\application\\response\\agent_query_response.py",
+      "accessCount": 1,
+      "lastAccessed": 1775045422129,
+      "type": "file"
+    },
+    {
+      "path": "app\\domains\\stock\\adapter\\outbound\\external\\serp_stock_data_collector.py",
+      "accessCount": 1,
+      "lastAccessed": 1775045913169,
+      "type": "file"
+    },
+    {
+      "path": "app\\domains\\stock\\adapter\\outbound\\persistence\\stock_vector_repository_impl.py",
+      "accessCount": 1,
+      "lastAccessed": 1775046139985,
+      "type": "file"
+    },
+    {
+      "path": "app\\domains\\stock\\infrastructure\\orm\\stock_vector_document_orm.py",
+      "accessCount": 1,
+      "lastAccessed": 1775046316899,
+      "type": "file"
+    },
+    {
+      "path": "app\\domains\\disclosure\\adapter\\outbound\\persistence\\disclosure_document_repository_impl.py",
+      "accessCount": 1,
+      "lastAccessed": 1775047670075,
+      "type": "file"
+    },
+    {
+      "path": "app\\domains\\disclosure\\adapter\\outbound\\external\\dart_document_api_client.py",
+      "accessCount": 1,
+      "lastAccessed": 1775047713816,
+      "type": "file"
+    },
+    {
+      "path": "app\\infrastructure\\cache\\redis_client.py",
+      "accessCount": 1,
+      "lastAccessed": 1775047915976,
+      "type": "file"
+    },
+    {
+      "path": "app/infrastructure/config/settings.py",
+      "accessCount": 1,
+      "lastAccessed": 1775047919937,
+      "type": "directory"
+    },
+    {
+      "path": "app\\domains\\disclosure\\domain\\entity\\rag_document_chunk.py",
+      "accessCount": 1,
+      "lastAccessed": 1775048130894,
+      "type": "file"
+    },
+    {
+      "path": "app\\domains\\disclosure\\application\\port\\dart_document_api_port.py",
+      "accessCount": 1,
+      "lastAccessed": 1775048131224,
+      "type": "file"
+    },
+    {
+      "path": "app/domains/stock",
+      "accessCount": 1,
+      "lastAccessed": 1775048442967,
+      "type": "directory"
+    },
+    {
+      "path": "app/domains/disclosure",
+      "accessCount": 1,
+      "lastAccessed": 1775048443775,
+      "type": "directory"
+    },
+    {
+      "path": "app/domains/stock/infrastructure/orm",
+      "accessCount": 1,
+      "lastAccessed": 1775048746064,
+      "type": "directory"
+    },
+    {
+      "path": "app/domains/disclosure/adapter/inbound",
+      "accessCount": 1,
+      "lastAccessed": 1775049084413,
+      "type": "directory"
+    },
+    {
+      "path": "app/domains/disclosure/application/service/disclosure_analysis_service.py",
+      "accessCount": 1,
+      "lastAccessed": 1775049158248,
+      "type": "directory"
+    },
+    {
+      "path": "app\\domains\\disclosure\\adapter\\outbound\\cache\\analysis_cache_adapter.py",
+      "accessCount": 1,
+      "lastAccessed": 1775049522545,
+      "type": "file"
+    },
+    {
+      "path": "app/domains/disclosure/domain/value_object/cache_key.py",
+      "accessCount": 1,
+      "lastAccessed": 1775049526886,
+      "type": "directory"
+    },
+    {
+      "path": "app\\domains\\disclosure\\domain\\value_object\\cache_key.py",
+      "accessCount": 1,
+      "lastAccessed": 1775049531744,
+      "type": "file"
+    },
+    {
+      "path": "app\\domains\\agent\\adapter\\inbound\\api",
+      "accessCount": 1,
+      "lastAccessed": 1775051094576,
+      "type": "directory"
     },
     {
       "path": "app\\adapter\\inbound\\api\\v1_router.py",
       "accessCount": 1,
-      "lastAccessed": 1774958846127,
-      "type": "file"
-    },
-    {
-      "path": "app\\infrastructure\\database\\database.py",
-      "accessCount": 1,
-      "lastAccessed": 1774959029247,
+      "lastAccessed": 1775051840536,
       "type": "file"
     },
     {
       "path": "main.py",
       "accessCount": 1,
-      "lastAccessed": 1774959029857,
+      "lastAccessed": 1775051841646,
       "type": "file"
     }
   ],

@@ -93,9 +93,15 @@ class OpenDartFinancialDataProvider(DartFinancialDataProvider):
                 roe=ratios.get("roe"),
                 roa=ratios.get("roa"),
                 debt_ratio=ratios.get("debt_ratio"),
+                sales=ratios.get("sales"),
+                operating_income=ratios.get("operating_income"),
+                net_income=ratios.get("net_income"),
                 per=None,  # 주가 데이터 필요 (SerpAPI에서 이미 제공)
                 pbr=None,  # 주가 데이터 필요 (SerpAPI에서 이미 제공)
                 collected_at=datetime.now(timezone.utc),
+                prev_sales=ratios.get("prev_sales"),
+                prev_operating_income=ratios.get("prev_operating_income"),
+                prev_net_income=ratios.get("prev_net_income"),
             )
 
         except httpx.HTTPStatusError as e:
@@ -109,33 +115,67 @@ class OpenDartFinancialDataProvider(DartFinancialDataProvider):
         self, items: list[dict], fiscal_year: str
     ) -> dict[str, Optional[float]]:
         """재무제표 항목에서 재무비율을 계산합니다."""
-        # 계정과목별 금액 추출
-        accounts: dict[str, float] = {}
+        # sj_div 기준으로 재무상태표(BS)와 손익계산서(IS/CIS) 항목을 분리한다.
+        # fnlttSinglAcntAll은 BS/IS/CIS/CF/SCE 등 여러 재무제표를 한꺼번에 반환하므로
+        # sj_div 없이 account_nm만으로 검색하면 자본변동표(SCE)의 자본총계가
+        # 재무상태표(BS)의 자본총계를 덮어써 ROE가 비정상적으로 높아지는 문제가 발생한다.
+        bs_accounts: dict[str, float] = {}       # 재무상태표 당기
+        is_accounts: dict[str, float] = {}       # 손익계산서 당기
+        is_prev_accounts: dict[str, float] = {}  # 손익계산서 전기
 
         for item in items:
+            sj_div = item.get("sj_div", "")
             account_nm = item.get("account_nm", "")
-            # 당기 금액 (thstrm_amount)
+
             amount_str = item.get("thstrm_amount", "")
+            amount: Optional[float] = None
+            if amount_str and amount_str != "-":
+                try:
+                    amount = float(amount_str.replace(",", ""))
+                except ValueError:
+                    pass
 
-            if not amount_str or amount_str == "-":
-                continue
+            prev_str = item.get("frmtrm_amount", "")
+            prev_amount: Optional[float] = None
+            if prev_str and prev_str != "-":
+                try:
+                    prev_amount = float(prev_str.replace(",", ""))
+                except ValueError:
+                    pass
 
-            try:
-                # 쉼표 제거 후 숫자 변환
-                amount = float(amount_str.replace(",", ""))
-                accounts[account_nm] = amount
-            except ValueError:
-                continue
+            if sj_div == "BS":
+                if amount is not None:
+                    bs_accounts[account_nm] = amount
+            elif sj_div in ("IS", "CIS"):
+                if amount is not None:
+                    is_accounts[account_nm] = amount
+                if prev_amount is not None:
+                    is_prev_accounts[account_nm] = prev_amount
 
-        # 필요한 계정과목 찾기
-        # 재무상태표 항목
-        total_assets = self._find_account(accounts, ["자산총계", "자산 총계"])
-        total_liabilities = self._find_account(accounts, ["부채총계", "부채 총계"])
-        total_equity = self._find_account(accounts, ["자본총계", "자본 총계"])
+        # 재무상태표 항목 (BS)
+        total_assets = self._find_account(bs_accounts, ["자산총계", "자산 총계"])
+        total_liabilities = self._find_account(bs_accounts, ["부채총계", "부채 총계"])
+        total_equity = self._find_account(bs_accounts, ["자본총계", "자본 총계"])
 
-        # 손익계산서 항목
+        # 손익계산서 항목 (IS/CIS)
         net_income = self._find_account(
-            accounts,
+            is_accounts,
+            ["당기순이익", "당기순이익(손실)", "분기순이익", "반기순이익"],
+        )
+        sales = self._find_account(
+            is_accounts,
+            ["매출액", "영업수익", "수익(매출액)"],
+        )
+        operating_income = self._find_account(
+            is_accounts,
+            ["영업이익", "영업이익(손실)"],
+        )
+
+        # 전기 손익계산서 항목
+        prev_sales = self._find_account(is_prev_accounts, ["매출액", "영업수익", "수익(매출액)"])
+        prev_operating_income = self._find_account(is_prev_accounts, ["영업이익", "영업이익(손실)"])
+        prev_net_income = self._find_account(
+            is_prev_accounts,
             ["당기순이익", "당기순이익(손실)", "분기순이익", "반기순이익"],
         )
 
@@ -143,6 +183,12 @@ class OpenDartFinancialDataProvider(DartFinancialDataProvider):
             "roe": None,
             "roa": None,
             "debt_ratio": None,
+            "sales": sales,
+            "operating_income": operating_income,
+            "net_income": net_income,
+            "prev_sales": prev_sales,
+            "prev_operating_income": prev_operating_income,
+            "prev_net_income": prev_net_income,
         }
 
         # ROE 계산: 당기순이익 / 자기자본 × 100

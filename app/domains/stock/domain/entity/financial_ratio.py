@@ -14,4 +14,11 @@ class FinancialRatio:
     per: Optional[float] = None  # 주가수익비율 (배)
     pbr: Optional[float] = None  # 주가순자산비율 (배)
     debt_ratio: Optional[float] = None  # 부채비율 (%)
+    sales: Optional[float] = None  # 매출액 (원)
+    operating_income: Optional[float] = None  # 영업이익 (원)
+    net_income: Optional[float] = None  # 당기순이익 (원)
     collected_at: Optional[datetime] = None
+    # 전기(전년도) 데이터
+    prev_sales: Optional[float] = None
+    prev_operating_income: Optional[float] = None
+    prev_net_income: Optional[float] = None

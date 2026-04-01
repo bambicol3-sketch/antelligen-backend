@@ -65,5 +65,11 @@ class FetchDartFinancialRatiosUseCase:
             per=ratios.per,
             pbr=ratios.pbr,
             debt_ratio=ratios.debt_ratio,
+            sales=ratios.sales,
+            operating_income=ratios.operating_income,
+            net_income=ratios.net_income,
             collected_at=ratios.collected_at,
+            prev_sales=ratios.prev_sales,
+            prev_operating_income=ratios.prev_operating_income,
+            prev_net_income=ratios.prev_net_income,
         )

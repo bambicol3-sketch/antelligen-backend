@@ -84,6 +84,9 @@ class GetStoredStockDataUseCase:
                 roa=parsed.get("dart_roa"),
                 debt_ratio=parsed.get("dart_debt_ratio"),
                 fiscal_year=parsed.get("dart_fiscal_year"),
+                sales=parsed.get("dart_sales"),
+                operating_income=parsed.get("dart_operating_income"),
+                net_income=parsed.get("dart_net_income"),
             )
 
         document_chunks = [
@@ -186,6 +189,27 @@ class GetStoredStockDataUseCase:
         if match:
             try:
                 result["dart_debt_ratio"] = float(match.group(1))
+            except ValueError:
+                pass
+
+        match = re.search(r"매출액:\s*([-\d,\.]+)억원", text)
+        if match:
+            try:
+                result["dart_sales"] = float(match.group(1).replace(",", "")) * 1e8
+            except ValueError:
+                pass
+
+        match = re.search(r"영업이익:\s*([-\d,\.]+)억원", text)
+        if match:
+            try:
+                result["dart_operating_income"] = float(match.group(1).replace(",", "")) * 1e8
+            except ValueError:
+                pass
+
+        match = re.search(r"당기순이익:\s*([-\d,\.]+)억원", text)
+        if match:
+            try:
+                result["dart_net_income"] = float(match.group(1).replace(",", "")) * 1e8
             except ValueError:
                 pass
 

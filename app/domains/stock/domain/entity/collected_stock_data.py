@@ -25,6 +25,12 @@ class CollectedStockData:
         dart_roa: float | None = None,
         dart_debt_ratio: float | None = None,
         dart_fiscal_year: str | None = None,
+        dart_sales: float | None = None,
+        dart_operating_income: float | None = None,
+        dart_net_income: float | None = None,
+        dart_prev_sales: float | None = None,
+        dart_prev_operating_income: float | None = None,
+        dart_prev_net_income: float | None = None,
     ):
         self.ticker = ticker
         self.stock_name = stock_name
@@ -47,3 +53,9 @@ class CollectedStockData:
         self.dart_roa = dart_roa
         self.dart_debt_ratio = dart_debt_ratio
         self.dart_fiscal_year = dart_fiscal_year
+        self.dart_sales = dart_sales
+        self.dart_operating_income = dart_operating_income
+        self.dart_net_income = dart_net_income
+        self.dart_prev_sales = dart_prev_sales
+        self.dart_prev_operating_income = dart_prev_operating_income
+        self.dart_prev_net_income = dart_prev_net_income

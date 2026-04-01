@@ -106,8 +106,12 @@ class RagChunkRepositoryImpl(RagChunkRepositoryPort):
             LIMIT :limit
         """)
 
-        result = await self._db.execute(query, params)
-        rows = result.fetchall()
+        try:
+            async with self._db.begin_nested():
+                result = await self._db.execute(query, params)
+                rows = result.fetchall()
+        except Exception:
+            return []
 
         chunks = []
         for row in rows:

@@ -63,11 +63,11 @@ async def collect_stock_data(ticker: str):
 
     # DART 재무비율 UseCase (선택적)
     dart_financial_ratios_usecase = None
-    if settings.dart_api_key:
+    if settings.open_dart_api_key:
         dart_financial_ratios_usecase = FetchDartFinancialRatiosUseCase(
             corp_code_repository=CorpCodeRepositoryImpl(),
             dart_financial_data_provider=OpenDartFinancialDataProvider(
-                api_key=settings.dart_api_key
+                api_key=settings.open_dart_api_key
             ),
         )
 

@@ -33,6 +33,12 @@ class StockDartFinancialRatioResponse(BaseModel):
     roa: float | None = None  # 총자산이익률 (%)
     debt_ratio: float | None = None  # 부채비율 (%)
     fiscal_year: str | None = None
+    sales: float | None = None  # 매출액 (원)
+    operating_income: float | None = None  # 영업이익 (원)
+    net_income: float | None = None  # 당기순이익 (원)
+    prev_sales: float | None = None
+    prev_operating_income: float | None = None
+    prev_net_income: float | None = None
 
 
 class StockIngestionReadyDataResponse(BaseModel):

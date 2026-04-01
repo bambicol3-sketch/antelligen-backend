@@ -69,7 +69,16 @@ class DisclosureAnalysisService:
                 dart_api=DartDisclosureApiClient(),
             )
 
-            result = await graph.invoke(ticker, company.corp_code, analysis_type)
+            try:
+                result = await graph.invoke(ticker, company.corp_code, analysis_type)
+            except Exception as exc:
+                await db.rollback()
+                logger.error("DisclosureAnalysisGraph failed for ticker=%s: %s", ticker, exc)
+                return AnalysisResponse(
+                    status="error",
+                    data={"ticker": ticker, "filings": []},
+                    error_message=str(exc),
+                )
 
         # Build response and cache
         elapsed = int((time.monotonic() - start_time) * 1000)
