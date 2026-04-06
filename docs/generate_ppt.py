@@ -7,16 +7,19 @@ prs = Presentation()
 prs.slide_width = Inches(13.33)
 prs.slide_height = Inches(7.5)
 
-DARK_BG   = RGBColor(0x1E, 0x1E, 0x2E)
-ACCENT    = RGBColor(0x89, 0xB4, 0xFA)
-GREEN     = RGBColor(0xA6, 0xE3, 0xA1)
-YELLOW    = RGBColor(0xF9, 0xE2, 0xAF)
-RED       = RGBColor(0xF3, 0x8B, 0xA8)
-SUBTEXT   = RGBColor(0xBA, 0xC2, 0xDE)
-WHITE     = RGBColor(0xFF, 0xFF, 0xFF)
-CARD_BG   = RGBColor(0x31, 0x32, 0x44)
-HEADER_BG = RGBColor(0x18, 0x18, 0x2E)
-ROW_ALT   = RGBColor(0x24, 0x27, 0x3A)
+# ── 흰 배경 + #3A59D1 테마 팔레트 ───────────────
+WHITE     = RGBColor(0xFF, 0xFF, 0xFF)   # 흰색 (헤더 텍스트용)
+DARK_BG   = RGBColor(0xFF, 0xFF, 0xFF)   # 슬라이드 배경 = 흰색
+DARK_TEXT = RGBColor(0x1A, 0x2B, 0x55)   # 본문 텍스트 (진한 네이비)
+ACCENT    = RGBColor(0x3A, 0x59, 0xD1)   # 주요 강조색 #3A59D1
+GREEN     = RGBColor(0x1A, 0x7A, 0x4A)   # 진한 초록
+YELLOW    = RGBColor(0xB8, 0x6C, 0x00)   # 진한 앰버
+RED       = RGBColor(0xC0, 0x39, 0x2B)   # 진한 빨강
+SUBTEXT   = RGBColor(0x5A, 0x6A, 0x9E)   # 중간 블루-그레이
+CARD_BG   = RGBColor(0xEE, 0xF2, 0xFF)   # 연한 블루 카드
+HEADER_BG = RGBColor(0x3A, 0x59, 0xD1)   # 헤더 배경 #3A59D1
+ROW_ALT   = RGBColor(0xE0, 0xE8, 0xFF)   # 교차 행 연블루
+CARD_HDR  = RGBColor(0x2A, 0x45, 0xB8)   # 카드 헤더 (약간 어두운 블루)
 
 blank_layout = prs.slide_layouts[6]
 
@@ -28,8 +31,10 @@ def set_bg(slide, color=DARK_BG):
 
 
 def add_textbox(slide, text, left, top, width, height,
-                font_size=18, bold=False, color=WHITE,
+                font_size=18, bold=False, color=None,
                 align=PP_ALIGN.LEFT, wrap=True):
+    if color is None:
+        color = DARK_TEXT
     txBox = slide.shapes.add_textbox(
         Inches(left), Inches(top), Inches(width), Inches(height)
     )
@@ -59,9 +64,10 @@ def add_rect(slide, left, top, width, height, fill_color):
 
 def add_slide_header(slide, title, subtitle=None):
     add_rect(slide, 0, 0, 13.33, 1.1, HEADER_BG)
-    add_textbox(slide, title, 0.4, 0.1, 10, 0.6, font_size=28, bold=True, color=ACCENT)
+    add_textbox(slide, title, 0.4, 0.1, 10, 0.6, font_size=28, bold=True, color=WHITE)
     if subtitle:
-        add_textbox(slide, subtitle, 0.4, 0.65, 12, 0.35, font_size=13, color=SUBTEXT)
+        add_textbox(slide, subtitle, 0.4, 0.65, 12, 0.35,
+                    font_size=13, color=RGBColor(0xCC, 0xDA, 0xFF))
 
 
 # ──────────────────────────────────────────────
@@ -72,7 +78,7 @@ set_bg(slide)
 
 add_rect(slide, 1.5, 1.8, 10.3, 0.08, ACCENT)
 add_textbox(slide, "메인 에이전트 (통합 분석)", 1.5, 2.1, 10.3, 1.2,
-            font_size=40, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+            font_size=40, bold=True, color=ACCENT, align=PP_ALIGN.CENTER)
 add_textbox(slide,
             "뉴스 · 공시 · 재무 서브에이전트를 병렬 호출하여\n종합 투자 시그널과 LLM 분석 요약을 반환하는 오케스트레이터 에이전트",
             1.5, 3.5, 10.3, 1.0, font_size=16, color=SUBTEXT, align=PP_ALIGN.CENTER)
@@ -143,8 +149,9 @@ for i, (name, col, desc, timing) in enumerate(agents):
     add_rect(slide, lx, 1.3, 4.0, 5.7, CARD_BG)
     add_rect(slide, lx, 1.3, 4.0, 0.5, col)
     add_textbox(slide, name, lx, 1.3, 4.0, 0.5,
-                font_size=15, bold=True, color=DARK_BG, align=PP_ALIGN.CENTER)
-    add_textbox(slide, desc, lx + 0.15, 2.0, 3.75, 3.2, font_size=12, color=WHITE)
+                font_size=15, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+    add_textbox(slide, desc, lx + 0.15, 2.0, 3.75, 3.2,
+                font_size=12, color=DARK_TEXT)
     add_rect(slide, lx + 0.2, 5.45, 3.6, 0.06, col)
     add_textbox(slide, "⏱  " + timing, lx + 0.15, 5.6, 3.75, 0.9,
                 font_size=12, color=col)
@@ -213,7 +220,7 @@ add_textbox(slide, "시그널 가중 집계 로직", 0.5, 1.38, 5.7, 0.45,
             font_size=14, bold=True, color=ACCENT)
 add_textbox(slide,
             "score = Σ(signal_score × confidence)\n         / Σ(confidence)",
-            0.5, 2.0, 5.7, 0.9, font_size=13, bold=True, color=WHITE)
+            0.5, 2.0, 5.7, 0.9, font_size=13, bold=True, color=DARK_TEXT)
 
 for i, (val, label, col) in enumerate([
     ("+1.0", "bullish  →  매수 신호", GREEN),
@@ -225,7 +232,7 @@ for i, (val, label, col) in enumerate([
     add_textbox(slide, val, 0.7, ty + 0.04, 1.0, 0.42,
                 font_size=13, bold=True, color=col)
     add_textbox(slide, label, 1.8, ty + 0.04, 4.0, 0.42,
-                font_size=13, color=WHITE)
+                font_size=13, color=DARK_TEXT)
 
 thresholds = (
     "판정 기준:\n"
@@ -237,7 +244,7 @@ add_textbox(slide, thresholds, 0.5, 4.95, 5.7, 1.8, font_size=12, color=SUBTEXT)
 
 add_rect(slide, 7.0, 1.3, 5.9, 5.7, CARD_BG)
 add_textbox(slide, "integrated_analysis_results", 7.1, 1.38, 5.7, 0.45,
-            font_size=14, bold=True, color=YELLOW)
+            font_size=14, bold=True, color=ACCENT)
 
 cols_data = [
     ("ticker",         "VARCHAR",  "종목 코드 (인덱스)"),
@@ -252,16 +259,91 @@ for i, (col, typ, desc) in enumerate(cols_data):
     ty = 1.95 + i * 0.62
     bg = CARD_BG if i % 2 == 0 else ROW_ALT
     add_rect(slide, 7.05, ty, 5.8, 0.56, bg)
-    add_textbox(slide, col,  7.15, ty + 0.06, 1.8, 0.44, font_size=11, bold=True, color=ACCENT)
-    add_textbox(slide, typ,  9.0,  ty + 0.06, 1.2, 0.44, font_size=10, color=YELLOW)
-    add_textbox(slide, desc, 10.2, ty + 0.06, 2.5, 0.44, font_size=10, color=SUBTEXT)
+    add_textbox(slide, col,  7.15, ty + 0.06, 1.8, 0.44,
+                font_size=11, bold=True, color=ACCENT)
+    add_textbox(slide, typ,  9.0,  ty + 0.06, 1.2, 0.44,
+                font_size=10, color=YELLOW)
+    add_textbox(slide, desc, 10.2, ty + 0.06, 2.5, 0.44,
+                font_size=10, color=SUBTEXT)
 
 add_textbox(slide, "※ 캐시: created_at 기준 1시간 이내 재사용",
             7.1, 6.45, 5.7, 0.4, font_size=11, color=SUBTEXT)
 
 
 # ──────────────────────────────────────────────
-# Slide 6: 분석 가능 종목 8개
+# Slide 6: 에러 처리 방식
+# ──────────────────────────────────────────────
+slide = prs.slides.add_slide(blank_layout)
+set_bg(slide)
+add_slide_header(slide, "에러 처리 방식", "서브에이전트 실패 격리 · result_status 판정 · 집계 제외 규칙")
+
+# 왼쪽: 실패 격리 흐름
+add_rect(slide, 0.35, 1.3, 5.9, 5.7, CARD_BG)
+add_rect(slide, 0.35, 1.3, 5.9, 0.42, RED)
+add_textbox(slide, "서브에이전트 실패 격리", 0.35, 1.3, 5.9, 0.42,
+            font_size=13, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+
+add_textbox(slide, "asyncio.gather(return_exceptions=True)",
+            0.5, 1.88, 5.6, 0.38, font_size=11, bold=True, color=ACCENT)
+add_textbox(slide, "하나가 실패해도 나머지 에이전트는 계속 실행",
+            0.5, 2.22, 5.6, 0.3, font_size=10, color=SUBTEXT)
+
+agents_err = [
+    ("뉴스",  "DB 없음 → 자동 수집 후 재시도\n재시도 후에도 없으면 no_data 반환",  GREEN),
+    ("공시",  "예외 발생 시 error 반환\nRedis 캐시 히트 시 즉시 반환",             YELLOW),
+    ("재무",  "벡터 DB 없음 → 자동 수집 후 재시도\n수집 실패 시 error 반환",       ACCENT),
+]
+for i, (name, desc, col) in enumerate(agents_err):
+    ty = 2.68 + i * 1.08
+    add_rect(slide, 0.45, ty, 5.7, 0.95, ROW_ALT if i % 2 else CARD_BG)
+    add_rect(slide, 0.45, ty, 0.06, 0.95, col)
+    add_textbox(slide, name + " 에이전트", 0.6, ty + 0.06, 1.8, 0.35,
+                font_size=11, bold=True, color=col)
+    add_textbox(slide, desc, 0.6, ty + 0.44, 5.4, 0.44,
+                font_size=10, color=SUBTEXT)
+
+add_textbox(slide, "실패 에이전트 → _coerce() → SubAgentResponse.error()",
+            0.5, 5.98, 5.6, 0.38, font_size=10, color=SUBTEXT)
+
+# 오른쪽 상단: result_status 판정
+add_rect(slide, 6.6, 1.3, 6.38, 2.7, CARD_BG)
+add_rect(slide, 6.6, 1.3, 6.38, 0.42, ACCENT)
+add_textbox(slide, "result_status 판정", 6.6, 1.3, 6.38, 0.42,
+            font_size=13, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+
+statuses = [
+    ("3개 모두 성공",  "success",          GREEN),
+    ("1~2개 성공",    "partial_failure",   YELLOW),
+    ("전체 실패",     "failure",           RED),
+]
+for i, (cond, status, col) in enumerate(statuses):
+    ty = 1.88 + i * 0.62
+    bg = ROW_ALT if i % 2 else CARD_BG
+    add_rect(slide, 6.7, ty, 6.15, 0.55, bg)
+    add_textbox(slide, cond,   6.8,  ty + 0.1, 2.8, 0.35, font_size=11, color=DARK_TEXT)
+    add_textbox(slide, status, 9.65, ty + 0.1, 2.9, 0.35, font_size=11, bold=True, color=col)
+
+# 오른쪽 하단: 집계 & 저장 규칙
+add_rect(slide, 6.6, 4.18, 6.38, 2.82, CARD_BG)
+add_rect(slide, 6.6, 4.18, 6.38, 0.42, YELLOW)
+add_textbox(slide, "집계 & 저장 규칙", 6.6, 4.18, 6.38, 0.42,
+            font_size=13, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+
+rules = [
+    ("시그널 집계 제외",  "is_success() AND signal != None 조건 미충족 시\n실패/no_data 에이전트는 집계에서 제외"),
+    ("DB 저장 조건",      "result_status == SUCCESS 일 때만 저장\npartial_failure / failure 는 저장 안 함"),
+    ("캐시 재사용",       "저장된 결과는 1시간 동안 캐시\n동일 ticker 재요청 시 서브에이전트 미호출"),
+]
+for i, (title, desc) in enumerate(rules):
+    ty = 4.75 + i * 0.72
+    bg = ROW_ALT if i % 2 else CARD_BG
+    add_rect(slide, 6.7, ty, 6.15, 0.65, bg)
+    add_textbox(slide, title, 6.8, ty + 0.04, 2.2, 0.3, font_size=11, bold=True, color=ACCENT)
+    add_textbox(slide, desc,  6.8, ty + 0.32, 5.9, 0.28, font_size=9,  color=SUBTEXT)
+
+
+# ──────────────────────────────────────────────
+# Slide 7: 분석 가능 종목 8개
 # ──────────────────────────────────────────────
 slide = prs.slides.add_slide(blank_layout)
 set_bg(slide)
@@ -291,13 +373,13 @@ for i, (ticker, name, sector, q) in enumerate(tickers):
     add_rect(slide, lx, ty, 3.05, 2.55, CARD_BG)
     add_rect(slide, lx, ty, 3.05, 0.42, col)
     add_textbox(slide, name, lx, ty, 3.05, 0.42,
-                font_size=14, bold=True, color=DARK_BG, align=PP_ALIGN.CENTER)
+                font_size=14, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
     add_textbox(slide, ticker, lx + 0.1, ty + 0.52, 2.85, 0.35,
                 font_size=12, bold=True, color=col)
     add_textbox(slide, sector, lx + 0.1, ty + 0.88, 2.85, 0.35,
                 font_size=11, color=SUBTEXT)
     add_textbox(slide, q, lx + 0.1, ty + 1.35, 2.85, 0.95,
-                font_size=10, color=WHITE)
+                font_size=10, color=DARK_TEXT)
 
 add_textbox(slide,
             "※ 새 종목 추가: TICKER_TO_KEYWORDS & COLLECTION_KEYWORDS 두 곳 모두 수정",

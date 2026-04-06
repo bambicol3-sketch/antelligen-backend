@@ -92,6 +92,49 @@ ProcessAgentQueryUseCase
 
 ---
 
+## 에러 처리 방식
+
+### 서브에이전트 실패 격리
+
+`asyncio.gather(return_exceptions=True)`를 사용하여 서브에이전트 하나가 실패해도 나머지 에이전트는 계속 실행됩니다.
+
+```python
+news_r, disclosure_r, finance_r = await asyncio.gather(
+    self._news.analyze(ticker, query),
+    self._disclosure.analyze(ticker),
+    self._finance.analyze(ticker, query),
+    return_exceptions=True,   # 예외를 결과값으로 반환
+)
+```
+
+실패한 에이전트는 `_coerce()`에서 `SubAgentResponse.error()`로 변환됩니다.
+
+### result_status 판정
+
+| 조건 | result_status |
+|------|--------------|
+| 3개 모두 성공 | `success` |
+| 1~2개 성공 | `partial_failure` |
+| 전체 실패 | `failure` |
+
+### 에이전트별 내부 에러 처리
+
+| 에이전트 | 에러 처리 |
+|----------|----------|
+| 뉴스 | DB 없으면 자동 수집 후 재시도, 그래도 없으면 `no_data` |
+| 공시 | 예외 발생 시 `error` 반환 |
+| 재무 | 벡터 DB 없으면 자동 수집 후 재시도, 수집 실패 시 `error` |
+
+### 집계 시 실패 에이전트 제외
+
+시그널 집계 시 `is_success()` && `signal != None` 조건을 만족하는 에이전트만 포함합니다. 실패하거나 `no_data`인 에이전트는 집계에서 제외됩니다.
+
+### DB 저장 조건
+
+`result_status == SUCCESS`일 때만 PostgreSQL에 캐시 저장합니다. `partial_failure` / `failure`는 저장하지 않습니다.
+
+---
+
 ## 시그널 집계 로직
 
 `score = Σ(signal_score × confidence) / Σ(confidence)`
