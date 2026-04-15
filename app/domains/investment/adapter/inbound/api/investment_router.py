@@ -1,5 +1,6 @@
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.exception.app_exception import AppException
 from app.common.response.base_response import BaseResponse
@@ -17,6 +18,7 @@ from app.domains.investment.application.usecase.investment_decision_usecase impo
 )
 from app.infrastructure.cache.redis_client import get_redis
 from app.infrastructure.config.settings import get_settings
+from app.infrastructure.database.database import get_db
 
 SESSION_KEY_PREFIX = "session:"
 
@@ -49,6 +51,7 @@ async def investment_decision(
     request: Request,
     body: InvestmentDecisionRequest,
     redis: aioredis.Redis = Depends(get_redis),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     인증된 사용자의 투자 판단 질의를 받아 멀티 에이전트 워크플로우를 실행한다.
@@ -60,7 +63,12 @@ async def investment_decision(
     user_id = await _require_auth(request, redis)
 
     settings = get_settings()
-    workflow = LangGraphInvestmentWorkflow(api_key=settings.openai_api_key)
+    workflow = LangGraphInvestmentWorkflow(
+        api_key=settings.openai_api_key,
+        serp_api_key=settings.serp_api_key,
+        youtube_api_key=settings.youtube_api_key,
+        db_session=db,
+    )
     usecase = InvestmentDecisionUseCase(workflow=workflow)
     result = await usecase.execute(user_id=user_id, request=body)
 
