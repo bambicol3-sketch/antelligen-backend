@@ -17,6 +17,10 @@ main에 직접 푸시 금지. 항상 PR 워크플로우 사용.
 1. `passgiant` fork에 작업 브랜치 생성 후 푸시
 2. `passgiant/branch` → `EDDI-RobotAcademy/main` PR 생성
 3. **merge commit**으로 머지 (squash 금지 — 원본 커밋 SHA 보존)
+4. 머지 후 반드시 fork sync 실행:
+   ```bash
+   git fetch upstream && git merge --ff-only upstream/main && git push origin main
+   ```
 
 - origin: `passgiant/antelligen-*` (fork)
 - upstream: `EDDI-RobotAcademy/antelligen-*` (원본)
