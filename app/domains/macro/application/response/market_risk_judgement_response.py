@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import List
+from typing import List, Optional
 
 from pydantic import BaseModel
 
@@ -27,3 +27,6 @@ class MarketRiskJudgementResponse(BaseModel):
     reference_videos: List[MacroReferenceVideoResponse]
     note_available: bool
     fallback_message: str = ""
+
+    # 스냅샷 갱신 시각 (매일 새벽 1시에 배치로 갱신). 빈 값이면 실시간 계산 결과.
+    updated_at: Optional[datetime] = None

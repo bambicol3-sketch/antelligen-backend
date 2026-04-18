@@ -93,8 +93,8 @@ class JudgeMarketRiskUseCase:
         fallback_message = ""
         if not has_context:
             fallback_message = (
-                "학습 노트와 최근 참고 영상이 모두 없어 컨텍스트 기반 판단은 유보하였습니다. "
-                "일반 견해만 참고하시기 바랍니다."
+                "Antelligen AI 내부 매크로 데이터가 일시적으로 확보되지 않아 데이터 기반 판단은 "
+                "유보하였습니다. 현재 화면에는 Antelligen AI 매크로 데스크의 일반 견해만 노출됩니다."
             )
 
         contextual_reasons_top = contextual_reasons[:3]

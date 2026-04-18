@@ -1,46 +1,48 @@
 from fastapi import APIRouter
 
 from app.common.response.base_response import BaseResponse
-from app.domains.macro.adapter.outbound.external.langchain_risk_judgement_adapter import (
-    LangChainRiskJudgementAdapter,
-)
-from app.domains.macro.adapter.outbound.external.youtube_macro_video_client import (
-    YoutubeMacroVideoClient,
-)
-from app.domains.macro.adapter.outbound.file.study_note_file_reader import (
-    StudyNoteFileReader,
+from app.domains.macro.adapter.outbound.cache.market_risk_snapshot_store import (
+    get_market_risk_snapshot_store,
 )
 from app.domains.macro.application.response.market_risk_judgement_response import (
     MarketRiskJudgementResponse,
 )
-from app.domains.macro.application.usecase.judge_market_risk_usecase import (
-    JudgeMarketRiskUseCase,
-)
-from app.infrastructure.config.settings import get_settings
-from app.infrastructure.external.openai_responses_client import get_openai_responses_client
 
 router = APIRouter(prefix="/macro", tags=["macro"])
 
 
 @router.get("/market-risk", response_model=BaseResponse[MarketRiskJudgementResponse])
 async def get_market_risk_status():
-    print("[macro.router] GET /macro/market-risk 수신")
-    settings = get_settings()
+    """거시 경제 리스크 판단 현황판.
 
-    note_reader = StudyNoteFileReader()
-    video_client = YoutubeMacroVideoClient(api_key=settings.youtube_api_key)
-    llm_adapter = LangChainRiskJudgementAdapter(client=get_openai_responses_client())
+    매일 새벽 1시 배치(`job_refresh_market_risk`)가 LLM 파이프라인을 한 번 돌려
+    스냅샷을 갱신한다. 이 엔드포인트는 스냅샷을 즉시 반환하기 때문에 프론트 접속
+    시마다 LLM 호출이 일어나지 않는다.
+    """
+    store = get_market_risk_snapshot_store()
+    snapshot = store.get()
 
-    result = await JudgeMarketRiskUseCase(
-        note_port=note_reader,
-        video_port=video_client,
-        llm_port=llm_adapter,
-    ).execute()
+    if snapshot is None:
+        print("[macro.router] ⚠ 스냅샷 미준비 — 준비 중 응답 반환")
+        return BaseResponse.ok(
+            data=MarketRiskJudgementResponse(
+                reference_date=__import__("datetime").date.today(),
+                status="UNKNOWN",
+                reasons=[],
+                contextual_status="UNKNOWN",
+                contextual_reasons=[],
+                baseline_status="UNKNOWN",
+                baseline_reasons=[],
+                reference_videos=[],
+                note_available=False,
+                fallback_message="매크로 엔진이 초기 스냅샷을 준비 중입니다. 잠시 후 다시 시도해 주세요.",
+                updated_at=None,
+            ),
+            message="스냅샷 준비 중",
+        )
 
     print(
-        f"[macro.router] 응답 준비 status={result.status} reasons={len(result.reasons)} "
-        f"contextual={result.contextual_status}({len(result.contextual_reasons)}) "
-        f"baseline={result.baseline_status}({len(result.baseline_reasons)}) "
-        f"videos={len(result.reference_videos)}"
+        f"[macro.router] ✓ 캐시 히트 status={snapshot.response.status} "
+        f"updated_at={snapshot.updated_at.isoformat()}"
     )
-    return BaseResponse.ok(data=result, message="시장 리스크 판단 완료")
+    return BaseResponse.ok(data=snapshot.response, message="시장 리스크 판단 완료")

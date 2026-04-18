@@ -13,6 +13,7 @@ from app.infrastructure.scheduler.disclosure_jobs import (
     job_seasonal_semiannual,
     job_seasonal_annual,
 )
+from app.infrastructure.scheduler.macro_jobs import job_refresh_market_risk
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,16 @@ def create_disclosure_scheduler() -> AsyncIOScheduler:
         misfire_grace_time=600,
     )
 
+    # Daily 05:00 KST — 거시 경제 리스크 판단 스냅샷 갱신
+    scheduler.add_job(
+        job_refresh_market_risk,
+        trigger=CronTrigger(hour=5, minute=0, timezone=KST),
+        id="refresh_market_risk",
+        name="Refresh macro market-risk snapshot",
+        replace_existing=True,
+        misfire_grace_time=600,
+    )
+
     # -- Seasonal report collection --
 
     # Quarterly report (A003): Mar, May, Aug, Nov 15th at 04:00 KST
@@ -108,5 +119,5 @@ def create_disclosure_scheduler() -> AsyncIOScheduler:
         misfire_grace_time=3600,
     )
 
-    logger.info("Disclosure scheduler configured (8 jobs: 1 hourly, 4 daily, 3 seasonal)")
+    logger.info("Disclosure scheduler configured (9 jobs: 1 hourly, 5 daily, 3 seasonal)")
     return scheduler
