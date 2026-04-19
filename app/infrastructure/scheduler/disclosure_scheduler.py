@@ -13,6 +13,7 @@ from app.infrastructure.scheduler.disclosure_jobs import (
     job_seasonal_semiannual,
     job_seasonal_annual,
 )
+from app.infrastructure.scheduler.nasdaq_jobs import job_collect_nasdaq_bars
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,16 @@ def create_disclosure_scheduler() -> AsyncIOScheduler:
         misfire_grace_time=600,
     )
 
+    # Daily 07:00 KST — collect NASDAQ daily bars (미국 장마감 후)
+    scheduler.add_job(
+        job_collect_nasdaq_bars,
+        trigger=CronTrigger(hour=7, minute=0, timezone=KST),
+        id="collect_nasdaq_bars",
+        name="Collect NASDAQ daily OHLCV bars",
+        replace_existing=True,
+        misfire_grace_time=600,
+    )
+
     # -- Seasonal report collection --
 
     # Quarterly report (A003): Mar, May, Aug, Nov 15th at 04:00 KST
@@ -108,5 +119,5 @@ def create_disclosure_scheduler() -> AsyncIOScheduler:
         misfire_grace_time=3600,
     )
 
-    logger.info("Disclosure scheduler configured (8 jobs: 1 hourly, 4 daily, 3 seasonal)")
+    logger.info("Disclosure scheduler configured (9 jobs: 1 hourly, 5 daily, 3 seasonal)")
     return scheduler
