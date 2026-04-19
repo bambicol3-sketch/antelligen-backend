@@ -196,3 +196,15 @@ Content-Type: application/json
 {
   "source": "한국경제"
 }
+
+### HistoryAgent Timeline - 미국 종목 (causality 포함)
+GET http://127.0.0.1:33333/api/v1/history-agent/timeline?ticker=AAPL&period=1Y
+Accept: application/json
+
+### HistoryAgent Timeline - 한국 종목 (causality 포함)
+GET http://127.0.0.1:33333/api/v1/history-agent/timeline?ticker=005930&period=1M
+Accept: application/json
+
+### HistoryAgent Timeline - 단기 (1W, causality 적을 가능성 높음)
+GET http://127.0.0.1:33333/api/v1/history-agent/timeline?ticker=NVDA&period=1W
+Accept: application/json
