@@ -23,6 +23,7 @@ from app.domains.market_analysis.adapter.inbound.api.market_analysis_router impo
 from app.domains.news.adapter.inbound.api.news_collect_router import router as news_collect_router
 from app.adapter.inbound.api.health_router import router as health_router
 from app.domains.investment.adapter.inbound.api.investment_router import router as investment_router
+from app.domains.dashboard.adapter.inbound.api.dashboard_router import router as dashboard_router
 
 # 모든 API는 /api/v1 prefix를 가진다.
 api_v1_router = APIRouter(prefix="/api/v1")
@@ -45,4 +46,5 @@ api_v1_router.include_router(disclosure_router)  # DISCLOSURE: /api/v1/disclosur
 api_v1_router.include_router(health_router)      # HEALTH: /api/v1/health/...
 api_v1_router.include_router(market_analysis_router)  # MARKET ANALYSIS: /api/v1/market-analysis/...
 api_v1_router.include_router(investment_router)  # INVESTMENT: /api/v1/investment/...
+api_v1_router.include_router(dashboard_router)  # DASHBOARD: /api/v1/dashboard/...
 # api_v1_router.include_router(finance_router)  # 재무 에이전트
