@@ -19,13 +19,15 @@ from app.domains.history_agent.application.response.timeline_response import (
     HypothesisResult,
     TimelineEvent,
 )
+from app.domains.history_agent.application.service.title_generation_service import (
+    FALLBACK_TITLE as _FALLBACK_TITLE,
+    PRICE_LLM_TOP_N as _PRICE_LLM_TOP_N,
+    enrich_price_titles as _enrich_price_titles,
+    price_importance as _price_importance,
+    rule_based_price_title as _rule_based_price_title,
+)
 from app.domains.history_agent.application.usecase.history_agent_usecase import (
-    _FALLBACK_TITLE,
-    _PRICE_LLM_TOP_N,
-    _enrich_price_titles,
     _from_price_events,
-    _price_importance,
-    _rule_based_price_title,
 )
 
 _TODAY = datetime.date.today()
@@ -149,7 +151,7 @@ async def test_enrich_price_titles_splits_into_llm_and_rule_based():
         return [f"LLM-{i}" for i in range(len(targets))]
 
     with patch(
-        "app.domains.history_agent.application.usecase.history_agent_usecase._batch_titles",
+        "app.domains.history_agent.application.service.title_generation_service.batch_titles",
         new=AsyncMock(side_effect=fake_batch_titles),
     ) as mock_batch:
         await _enrich_price_titles(events)
@@ -177,11 +179,11 @@ async def test_enrich_price_titles_prioritizes_causality_over_raw_change():
         return [f"LLM-{i}" for i in range(len(targets))]
 
     with patch(
-        "app.domains.history_agent.application.usecase.history_agent_usecase._PRICE_LLM_TOP_N",
+        "app.domains.history_agent.application.service.title_generation_service.PRICE_LLM_TOP_N",
         1,
     ):
         with patch(
-            "app.domains.history_agent.application.usecase.history_agent_usecase._batch_titles",
+            "app.domains.history_agent.application.service.title_generation_service.batch_titles",
             new=AsyncMock(side_effect=fake_batch_titles),
         ):
             await _enrich_price_titles(events)
@@ -203,7 +205,7 @@ async def test_enrich_price_titles_skips_already_enriched():
         return ["LLM-new"] * len(targets)
 
     with patch(
-        "app.domains.history_agent.application.usecase.history_agent_usecase._batch_titles",
+        "app.domains.history_agent.application.service.title_generation_service.batch_titles",
         new=AsyncMock(side_effect=fake_batch_titles),
     ) as mock_batch:
         await _enrich_price_titles(events)

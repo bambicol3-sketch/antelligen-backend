@@ -4,7 +4,7 @@ import logging
 from typing import Optional
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Body, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +19,7 @@ from app.domains.dashboard.adapter.outbound.external.dart_corporate_event_client
 from app.domains.dashboard.adapter.outbound.external.sec_edgar_announcement_client import (
     SecEdgarAnnouncementClient,
 )
+from app.domains.dashboard.adapter.outbound.external.fred_macro_client import FredMacroClient
 from app.domains.dashboard.adapter.outbound.external.yahoo_finance_asset_type_client import (
     YahooFinanceAssetTypeClient,
 )
@@ -31,7 +32,12 @@ from app.domains.dashboard.adapter.outbound.external.yahoo_finance_stock_client 
 from app.domains.history_agent.adapter.outbound.persistence.event_enrichment_repository_impl import (
     EventEnrichmentRepositoryImpl,
 )
+from app.domains.history_agent.application.request.title_request import TitleBatchRequest
 from app.domains.history_agent.application.response.timeline_response import TimelineResponse
+from app.domains.history_agent.application.response.title_response import TitleBatchResponse
+from app.domains.history_agent.application.usecase.generate_titles_usecase import (
+    GenerateTitlesUseCase,
+)
 from app.domains.history_agent.application.usecase.history_agent_usecase import HistoryAgentUseCase
 from app.infrastructure.cache.redis_client import get_redis
 from app.infrastructure.database.database import get_db
@@ -57,6 +63,7 @@ async def _resolve_corp_code(ticker: str, db: AsyncSession) -> Optional[str]:
 async def get_timeline(
     ticker: str = Query(..., description="종목 코드 (예: AAPL, 005930)"),
     period: str = Query("1Y", description="조회 기간: 1D | 1W | 1M | 1Y"),
+    enrich_titles: bool = Query(True, description="LLM 타이틀 생성 여부. False면 rule-based 타이틀만 반환"),
     db: AsyncSession = Depends(get_db),
     redis: aioredis.Redis = Depends(get_redis),
 ):
@@ -65,6 +72,11 @@ async def get_timeline(
     - PRICE: 52주 신고가/신저가, 급등락, 거래량 급증, 갭
     - CORPORATE: 실적, 배당, 유상증자, 자사주, 임원변동
     - ANNOUNCEMENT: 합병/인수/계약 공시 (DART or SEC EDGAR)
+
+    asset_type별 동작 차이:
+    - EQUITY: PRICE·CORPORATE·ANNOUNCEMENT 수집 + causality 분석 포함
+    - INDEX (^IXIC, ^GSPC 등): PRICE 이벤트만 수집, causality=null (개별 종목 기반 분석 부적합)
+    - ETF (SPY 등): 빈 타임라인 반환 (is_etf=true)
     """
     if period not in _VALID_PERIODS:
         raise AppException(
@@ -84,7 +96,8 @@ async def get_timeline(
         redis=redis,
         enrichment_repo=EventEnrichmentRepositoryImpl(db),
         asset_type_port=YahooFinanceAssetTypeClient(),
-    ).execute(ticker=ticker, period=period, corp_code=corp_code)
+        fred_macro_port=FredMacroClient(),
+    ).execute(ticker=ticker, period=period, corp_code=corp_code, enrich_titles=enrich_titles)
 
     return BaseResponse.ok(data=result)
 
@@ -93,6 +106,7 @@ async def get_timeline(
 async def stream_timeline(
     ticker: str = Query(..., description="종목 코드 (예: AAPL, 005930)"),
     period: str = Query("1Y", description="조회 기간: 1D | 1W | 1M | 1Y"),
+    enrich_titles: bool = Query(True, description="LLM 타이틀 생성 여부. False면 rule-based 타이틀만 반환"),
     db: AsyncSession = Depends(get_db),
     redis: aioredis.Redis = Depends(get_redis),
 ):
@@ -120,6 +134,7 @@ async def stream_timeline(
         redis=redis,
         enrichment_repo=EventEnrichmentRepositoryImpl(db),
         asset_type_port=YahooFinanceAssetTypeClient(),
+        fred_macro_port=FredMacroClient(),
     )
 
     async def _run() -> None:
@@ -129,6 +144,7 @@ async def stream_timeline(
                 period=period,
                 corp_code=corp_code,
                 on_progress=on_progress,
+                enrich_titles=enrich_titles,
             )
             await queue.put({"type": "done", "data": result.model_dump_json()})
         except Exception as exc:
@@ -160,3 +176,16 @@ async def stream_timeline(
             "Connection": "keep-alive",
         },
     )
+
+
+@router.post("/titles", response_model=BaseResponse[TitleBatchResponse])
+async def generate_titles(
+    request: TitleBatchRequest = Body(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """이벤트 배치의 LLM 타이틀을 생성한다. DB 캐시 히트분은 즉시 반환."""
+    usecase = GenerateTitlesUseCase(
+        enrichment_repo=EventEnrichmentRepositoryImpl(db),
+    )
+    result = await usecase.execute(request)
+    return BaseResponse.ok(data=result)

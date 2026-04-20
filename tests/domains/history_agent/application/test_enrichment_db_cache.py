@@ -14,10 +14,12 @@ from app.domains.history_agent.application.response.timeline_response import (
     HypothesisResult,
     TimelineEvent,
 )
+from app.domains.history_agent.application.service.title_generation_service import (
+    FALLBACK_TITLE as _FALLBACK_TITLE,
+    is_fallback_title as _is_fallback_title,
+)
 from app.domains.history_agent.application.usecase.history_agent_usecase import (
     HistoryAgentUseCase,
-    _FALLBACK_TITLE,
-    _is_fallback_title,
 )
 from app.domains.history_agent.domain.entity.event_enrichment import (
     EventEnrichment,
@@ -215,6 +217,58 @@ async def test_save_enrichments_skips_when_no_new_events():
 # ─────────────────────────────────────────────────────────────
 # Redis 캐시 유지 검증
 # ─────────────────────────────────────────────────────────────
+
+async def test_no_llm_title_call_when_enrich_titles_false():
+    """enrich_titles=False이면 enrich_price_titles / enrich_other_titles가 호출되지 않는다."""
+    from app.domains.dashboard.application.response.announcement_response import AnnouncementsResponse
+    from app.domains.dashboard.application.response.corporate_event_response import CorporateEventsResponse
+    from app.domains.dashboard.application.response.price_event_response import PriceEventsResponse
+
+    redis_mock = AsyncMock()
+    redis_mock.get = AsyncMock(return_value=None)
+    redis_mock.setex = AsyncMock()
+
+    repo = AsyncMock()
+    repo.find_by_keys = AsyncMock(return_value=[])
+    repo.upsert_bulk = AsyncMock(return_value=0)
+
+    asset_type_mock = AsyncMock()
+    asset_type_mock.is_etf = AsyncMock(return_value=False)
+
+    usecase = HistoryAgentUseCase(
+        stock_bars_port=MagicMock(),
+        yfinance_corporate_port=MagicMock(),
+        dart_corporate_client=MagicMock(),
+        sec_edgar_port=MagicMock(),
+        dart_announcement_client=MagicMock(),
+        redis=redis_mock,
+        enrichment_repo=repo,
+        asset_type_port=asset_type_mock,
+    )
+
+    _module = "app.domains.history_agent.application.usecase.history_agent_usecase"
+
+    price_response = PriceEventsResponse(ticker=_TICKER, period="1M", count=0, events=[])
+    corp_response = CorporateEventsResponse(ticker=_TICKER, period="1M", count=0, events=[])
+    ann_response = AnnouncementsResponse(ticker=_TICKER, period="1M", count=0, events=[])
+
+    with patch(f"{_module}.enrich_price_titles", new_callable=AsyncMock) as mock_price_titles, \
+         patch(f"{_module}.enrich_other_titles", new_callable=AsyncMock) as mock_other_titles, \
+         patch(f"{_module}.GetPriceEventsUseCase") as MockPriceUC, \
+         patch(f"{_module}.GetCorporateEventsUseCase") as MockCorpUC, \
+         patch(f"{_module}.GetAnnouncementsUseCase") as MockAnnUC, \
+         patch(f"{_module}._enrich_causality", new_callable=AsyncMock), \
+         patch(f"{_module}._enrich_announcement_details", new_callable=AsyncMock):
+
+        MockPriceUC.return_value.execute = AsyncMock(return_value=price_response)
+        MockCorpUC.return_value.execute = AsyncMock(return_value=corp_response)
+        MockAnnUC.return_value.execute = AsyncMock(return_value=ann_response)
+
+        await usecase.execute(ticker=_TICKER, period="1M", enrich_titles=False)
+
+        mock_price_titles.assert_not_called()
+        mock_other_titles.assert_not_called()
+
 
 async def test_redis_cache_hit_skips_db_query():
     """Redis 캐시 히트 시 DB 조회가 수행되지 않는다."""

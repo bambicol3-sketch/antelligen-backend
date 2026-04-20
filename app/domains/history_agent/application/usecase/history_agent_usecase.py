@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 from datetime import timedelta
 from typing import Awaitable, Callable, Dict, List, Optional, Tuple
@@ -14,6 +13,7 @@ from app.domains.dashboard.adapter.outbound.external.dart_corporate_event_client
     DartCorporateEventClient,
 )
 from app.domains.dashboard.application.port.out.asset_type_port import AssetTypePort
+from app.domains.dashboard.application.port.out.fred_macro_port import FredMacroPort
 from app.domains.dashboard.application.port.out.sec_edgar_announcement_port import (
     SecEdgarAnnouncementPort,
 )
@@ -23,12 +23,16 @@ from app.domains.dashboard.application.port.out.yfinance_corporate_event_port im
 )
 from app.domains.dashboard.application.response.announcement_response import AnnouncementsResponse
 from app.domains.dashboard.application.response.corporate_event_response import CorporateEventsResponse
+from app.domains.dashboard.application.response.economic_event_response import EconomicEventsResponse
 from app.domains.dashboard.application.response.price_event_response import PriceEventsResponse
 from app.domains.dashboard.application.usecase.get_announcements_usecase import (
     GetAnnouncementsUseCase,
 )
 from app.domains.dashboard.application.usecase.get_corporate_events_usecase import (
     GetCorporateEventsUseCase,
+)
+from app.domains.dashboard.application.usecase.get_economic_events_usecase import (
+    GetEconomicEventsUseCase,
 )
 from app.domains.dashboard.application.usecase.get_price_events_usecase import GetPriceEventsUseCase
 from app.domains.history_agent.application.port.out.event_enrichment_repository_port import (
@@ -38,6 +42,15 @@ from app.domains.history_agent.application.response.timeline_response import (
     HypothesisResult,
     TimelineEvent,
     TimelineResponse,
+)
+from app.domains.history_agent.application.service.title_generation_service import (
+    FALLBACK_TITLE,
+    TITLE_MODEL,
+    enrich_macro_titles,
+    enrich_other_titles,
+    enrich_price_titles,
+    is_fallback_title,
+    rule_based_price_title,
 )
 from app.domains.history_agent.domain.entity.event_enrichment import (
     EventEnrichment,
@@ -61,65 +74,14 @@ _EXCLUDED_PRICE_TYPES = {"HIGH_52W"}
 # value 필드가 변화율(%)인 PRICE 타입 — change_pct 세팅용
 _PCT_VALUE_TYPES = {"SURGE", "PLUNGE", "GAP_UP", "GAP_DOWN"}
 
-# ── 타이틀 생성 ─────────────────────────────────────────────────
-_TITLE_MODEL = "gpt-5-mini"
-_TITLE_BATCH = 15
-_TITLE_CONCURRENCY = 10
-
-# PRICE 이벤트 중 LLM 타이틀을 생성할 상위 건수 (중요도 내림차순).
-# 나머지는 rule-based 타이틀로 즉시 대체되어 응답 시간을 단축한다.
-_PRICE_LLM_TOP_N = 50
-
-# PRICE: 원인 기반 타이틀
-_PRICE_TITLE_SYSTEM = """\
-당신은 주식 시장 분석가입니다.
-각 가격 이벤트에 대해, 그 이벤트가 발생한 원인을 한 구절로 요약한 타이틀을 생성하십시오.
-
-규칙:
-- 타이틀은 15자 이내의 한국어
-- 단순 현상 설명이 아닌 원인·배경을 담는다
-- 인과 가설이 제공되면 반드시 활용한다
-- JSON 배열로만 응답: ["타이틀1", "타이틀2", ...]
-- 이벤트 순서와 배열 순서를 반드시 일치시킨다
-
-예시:
-- "연준 금리 동결 기대감"
-- "실적 쇼크 우려"
-- "AI 수혜 기대감으로 갭 상승"
-- "기관 대량 매도세"
-- "거시 불확실성 고조"
-"""
-
-# CORPORATE / ANNOUNCEMENT: 이벤트 설명 타이틀
-_OTHER_TITLE_SYSTEM = """\
-당신은 주식 투자 이벤트 편집자입니다.
-각 이벤트의 type / detail 을 읽고, 그 이벤트를 가장 잘 표현하는 짧은 한국어 타이틀을 생성하십시오.
-
-규칙:
-- 타이틀은 12자 이내
-- JSON 배열로만 응답: ["타이틀1", "타이틀2", ...]
-- 이벤트 순서와 배열 순서를 반드시 일치시킨다
-"""
-
-_FALLBACK_TITLE: dict[str, str] = {
-    "LOW_52W": "52주 신저가",
-    "SURGE": "급등",
-    "PLUNGE": "급락",
-    "GAP_UP": "갭 상승",
-    "GAP_DOWN": "갭 하락",
-    "EARNINGS": "실적 발표",
-    "DIVIDEND": "배당",
-    "EX_DIVIDEND": "배당락",
-    "STOCK_SPLIT": "주식 분할",
-    "RIGHTS_OFFERING": "유상증자",
-    "BUYBACK": "자사주 취득",
-    "BUYBACK_CANCEL": "자사주 소각",
-    "MANAGEMENT_CHANGE": "임원 변동",
-    "DISCLOSURE": "공시",
-    "MERGER_ACQUISITION": "합병·인수",
-    "CONTRACT": "계약 체결",
-    "MAJOR_EVENT": "주요 공시",
+# ── 지수 → FRED 매크로 리전 매핑 ────────────────────────────────
+_INDEX_REGION: Dict[str, str] = {
+    "^IXIC": "US",
+    "^GSPC": "US",
+    "^DJI":  "US",
+    "^KS11": "KR",
 }
+_DEFAULT_INDEX_REGION = "US"
 
 
 _ANNOUNCEMENT_SUMMARY_SYSTEM = """\
@@ -144,7 +106,7 @@ def _is_english_text(text: str) -> bool:
 async def _summarize_to_korean(detail: str) -> str:
     """영문 8-K 본문을 한국어 2~3문장으로 요약한다. 실패 시 원문 반환."""
     try:
-        llm = get_workflow_llm(model=_TITLE_MODEL)
+        llm = get_workflow_llm(model=TITLE_MODEL)
         response = await llm.ainvoke([
             SystemMessage(content=_ANNOUNCEMENT_SUMMARY_SYSTEM),
             HumanMessage(content=detail),
@@ -178,136 +140,10 @@ async def _enrich_announcement_details(timeline: List[TimelineEvent]) -> None:
     logger.info("[HistoryAgent] ✦ 공시 한국어 요약 완료")
 
 
-def _hypothesis_summary(event: TimelineEvent) -> str:
-    """인과 가설이 있으면 첫 번째 가설의 핵심 원인 부분을 반환한다."""
-    if not event.causality:
-        return "(없음)"
-    text = event.causality[0].hypothesis
-    # "→" 앞부분(원인)만 추출, 없으면 전체 80자
-    cause = text.split("→")[0].strip() if "→" in text else text[:80]
-    return cause
-
-
-async def _batch_titles(
-    events: List[TimelineEvent],
-    system_prompt: str,
-    build_line: callable,
-) -> List[str]:
-    """배치 단위 LLM 호출을 병렬 실행해 타이틀 목록을 반환한다. 실패 시 fallback."""
-    if not events:
-        return []
-
-    fallbacks = [_FALLBACK_TITLE.get(e.type, e.type) for e in events]
-    llm = get_workflow_llm(model=_TITLE_MODEL)
-    semaphore = asyncio.Semaphore(_TITLE_CONCURRENCY)
-
-    async def _run_batch(start: int, batch: List[TimelineEvent]) -> List[str]:
-        lines = "\n".join(
-            f"{j + 1}. {build_line(e)}" for j, e in enumerate(batch)
-        )
-        async with semaphore:
-            try:
-                response = await llm.ainvoke([
-                    SystemMessage(content=system_prompt),
-                    HumanMessage(content=lines),
-                ])
-                parsed = json.loads(response.content.strip())
-                if isinstance(parsed, list) and len(parsed) == len(batch):
-                    return [str(t) for t in parsed]
-            except Exception as exc:
-                logger.warning("[HistoryAgent] 타이틀 배치 생성 실패: %s", exc)
-        return fallbacks[start: start + len(batch)]
-
-    tasks = [
-        _run_batch(i, events[i: i + _TITLE_BATCH])
-        for i in range(0, len(events), _TITLE_BATCH)
-    ]
-    results = await asyncio.gather(*tasks)
-    titles: List[str] = []
-    for sub in results:
-        titles.extend(sub)
-    return titles
-
-
-def _is_fallback_title(event: TimelineEvent) -> bool:
-    fallback = _FALLBACK_TITLE.get(event.type, event.type)
-    return event.title == fallback
-
-
-def _price_importance(e: TimelineEvent) -> float:
-    """PRICE 이벤트의 LLM 타이틀 우선순위 점수. 높을수록 먼저 LLM 처리."""
-    score = abs(e.change_pct or 0.0)
-    if e.causality:
-        score += 100
-    if e.type in {"SURGE", "PLUNGE"}:
-        score += 50
-    if e.type == "LOW_52W":
-        score += 30
-    if e.type in {"GAP_UP", "GAP_DOWN"}:
-        score += 5
-    return score
-
-
-def _rule_based_price_title(e: TimelineEvent) -> str:
-    """LLM 없이 생성하는 타이틀. 변화율이 있으면 '급등 (+5.2%)' 형태, 없으면 기본 라벨."""
-    kind = _FALLBACK_TITLE.get(e.type, e.type)
-    if e.change_pct is not None:
-        sign = "+" if e.change_pct >= 0 else ""
-        return f"{kind} ({sign}{e.change_pct:.1f}%)"
-    return kind
-
-
-async def _enrich_price_titles(timeline: List[TimelineEvent]) -> None:
-    """PRICE 이벤트 타이틀 생성. 중요도 상위 _PRICE_LLM_TOP_N 건만 LLM, 나머지는 rule-based."""
-    candidates = [e for e in timeline if e.category == "PRICE" and _is_fallback_title(e)]
-    if not candidates:
-        return
-
-    candidates.sort(key=_price_importance, reverse=True)
-    llm_targets = candidates[:_PRICE_LLM_TOP_N]
-    rule_targets = candidates[_PRICE_LLM_TOP_N:]
-
-    logger.info(
-        "[HistoryAgent] ✦ PRICE 타이틀: LLM=%d, rule-based=%d (total=%d, cutoff=top %d)",
-        len(llm_targets), len(rule_targets), len(candidates), _PRICE_LLM_TOP_N,
-    )
-
-    for e in rule_targets:
-        e.title = _rule_based_price_title(e)
-
-    if not llm_targets:
-        return
-
-    def build_line(e: TimelineEvent) -> str:
-        return f"type={e.type} detail={e.detail} | 인과가설: {_hypothesis_summary(e)}"
-
-    titles = await _batch_titles(llm_targets, _PRICE_TITLE_SYSTEM, build_line)
-    for event, title in zip(llm_targets, titles):
-        event.title = title
-    logger.info("[HistoryAgent] ✦ PRICE 타이틀 생성 완료 (LLM=%d)", len(llm_targets))
-
-
-async def _enrich_other_titles(timeline: List[TimelineEvent]) -> None:
-    """CORPORATE / ANNOUNCEMENT 이벤트 타이틀을 생성한다."""
-    other_events = [e for e in timeline if e.category != "PRICE" and _is_fallback_title(e)]
-    if not other_events:
-        return
-
-    logger.info("[HistoryAgent] ✦ CORPORATE/ANNOUNCEMENT 타이틀 생성 시작: %d건", len(other_events))
-
-    def build_line(e: TimelineEvent) -> str:
-        return f"type={e.type} detail={e.detail}"
-
-    titles = await _batch_titles(other_events, _OTHER_TITLE_SYSTEM, build_line)
-    for event, title in zip(other_events, titles):
-        event.title = title
-    logger.info("[HistoryAgent] ✦ CORPORATE/ANNOUNCEMENT 타이틀 생성 완료")
-
-
 def _from_price_events(result: PriceEventsResponse) -> List[TimelineEvent]:
     return [
         TimelineEvent(
-            title=_FALLBACK_TITLE.get(e.type, e.type),
+            title=FALLBACK_TITLE.get(e.type, e.type),
             date=e.date,
             category="PRICE",
             type=e.type,
@@ -324,7 +160,7 @@ def _from_price_events(result: PriceEventsResponse) -> List[TimelineEvent]:
 def _from_corporate_events(result: CorporateEventsResponse) -> List[TimelineEvent]:
     return [
         TimelineEvent(
-            title=_FALLBACK_TITLE.get(e.type, e.type),
+            title=FALLBACK_TITLE.get(e.type, e.type),
             date=e.date,
             category="CORPORATE",
             type=e.type,
@@ -339,7 +175,7 @@ def _from_corporate_events(result: CorporateEventsResponse) -> List[TimelineEven
 def _from_announcements(result: AnnouncementsResponse) -> List[TimelineEvent]:
     return [
         TimelineEvent(
-            title=_FALLBACK_TITLE.get(e.type, e.type),
+            title=FALLBACK_TITLE.get(e.type, e.type),
             date=e.date,
             category="ANNOUNCEMENT",
             type=e.type,
@@ -349,6 +185,31 @@ def _from_announcements(result: AnnouncementsResponse) -> List[TimelineEvent]:
         )
         for e in result.events
     ]
+
+
+def _from_macro_events(result: EconomicEventsResponse) -> List[TimelineEvent]:
+    events = []
+    for e in result.events:
+        if e.previous is not None:
+            change = round(e.value - e.previous, 4)
+            sign = "+" if change >= 0 else ""
+            detail = f"{e.label} {e.value:.2f}% (이전: {e.previous:.2f}%, 변화: {sign}{change:.2f}%p)"
+            change_pct = change
+        else:
+            detail = f"{e.label} {e.value:.2f}%"
+            change_pct = None
+        events.append(
+            TimelineEvent(
+                title=FALLBACK_TITLE.get(e.type, e.label),
+                date=e.date,
+                category="MACRO",
+                type=e.type,
+                detail=detail,
+                source="FRED",
+                change_pct=change_pct,
+            )
+        )
+    return events
 
 
 async def _run_causality(ticker: str, event: TimelineEvent) -> List[HypothesisResult]:
@@ -371,7 +232,13 @@ async def _run_causality(ticker: str, event: TimelineEvent) -> List[HypothesisRe
         return []
 
 
-async def _enrich_causality(ticker: str, timeline: List[TimelineEvent]) -> None:
+async def _enrich_causality(ticker: str, timeline: List[TimelineEvent], is_index: bool = False) -> None:
+    # TODO: 향후 매크로 causality (Fed 결정, CPI 서프라이즈, 섹터 로테이션 등) 지원 시
+    #       is_index=True 분기에서 별도 매크로 분석 워크플로우를 호출한다.
+    if is_index:
+        logger.info("[HistoryAgent] ✦ INDEX 인과관계 분석 생략 (개별 종목 기반 causality 부적합)")
+        return
+
     targets = [
         e for e in timeline
         if e.category == "PRICE"
@@ -416,6 +283,7 @@ class HistoryAgentUseCase:
         redis: aioredis.Redis,
         enrichment_repo: EventEnrichmentRepositoryPort,
         asset_type_port: AssetTypePort,
+        fred_macro_port: FredMacroPort,
     ):
         self._stock_bars_port = stock_bars_port
         self._yfinance_corporate_port = yfinance_corporate_port
@@ -425,6 +293,7 @@ class HistoryAgentUseCase:
         self._redis = redis
         self._enrichment_repo = enrichment_repo
         self._asset_type_port = asset_type_port
+        self._fred_macro_port = fred_macro_port
 
     async def execute(
         self,
@@ -432,6 +301,7 @@ class HistoryAgentUseCase:
         period: str,
         corp_code: Optional[str] = None,
         on_progress: Optional[Callable[[str, str, int], Awaitable[None]]] = None,
+        enrich_titles: bool = True,
     ) -> TimelineResponse:
         async def _notify(step: str, label: str, pct: int) -> None:
             if on_progress:
@@ -440,7 +310,7 @@ class HistoryAgentUseCase:
                 except Exception:
                     pass
 
-        cache_key = f"history_agent:{ticker}:{period}"
+        cache_key = f"history_agent:{ticker}:{period}" + ("" if enrich_titles else ":no-titles")
 
         cached = await self._redis.get(cache_key)
         if cached:
@@ -454,8 +324,11 @@ class HistoryAgentUseCase:
         logger.info("[HistoryAgent] 시작: ticker=%s, period=%s", ticker, period)
         logger.info("[HistoryAgent] ══════════════════════════════════════")
 
-        is_etf = await self._asset_type_port.is_etf(ticker)
-        if is_etf:
+        quote_type = await self._asset_type_port.get_quote_type(ticker)
+        asset_type = quote_type.upper() if quote_type.upper() in {"EQUITY", "INDEX", "ETF", "UNKNOWN"} else "UNKNOWN"
+        logger.info("[HistoryAgent] 자산 유형: ticker=%s, asset_type=%s", ticker, asset_type)
+
+        if asset_type == "ETF":
             logger.info("[HistoryAgent] ETF 감지: 타임라인 수집 전체 생략 (ticker=%s)", ticker)
             await _notify("done", "ETF는 타임라인 미제공", 100)
             response = TimelineResponse(
@@ -464,9 +337,19 @@ class HistoryAgentUseCase:
                 count=0,
                 events=[],
                 is_etf=True,
+                asset_type="ETF",
             )
             await self._redis.setex(cache_key, _CACHE_TTL, response.model_dump_json())
             return response
+
+        if asset_type == "INDEX":
+            return await self._execute_index_timeline(
+                ticker=ticker,
+                period=period,
+                cache_key=cache_key,
+                on_progress=on_progress,
+                enrich_titles=enrich_titles,
+            )
 
         price_uc = GetPriceEventsUseCase(stock_bars_port=self._stock_bars_port)
         corporate_uc = GetCorporateEventsUseCase(
@@ -527,13 +410,19 @@ class HistoryAgentUseCase:
         await _notify("causality", "인과관계 분석 중...", 55)
         await _enrich_causality(ticker, timeline)
 
-        # 3) 타이틀 생성 + 공시 한국어 요약 병렬
+        # 3) 타이틀 생성 + 공시 한국어 요약
         await _notify("title_gen", "AI 타이틀 생성 중...", 75)
-        await asyncio.gather(
-            _enrich_price_titles(timeline),
-            _enrich_other_titles(timeline),
-            _enrich_announcement_details(timeline),
-        )
+        if enrich_titles:
+            await asyncio.gather(
+                enrich_price_titles(timeline),
+                enrich_other_titles(timeline),
+                _enrich_announcement_details(timeline),
+            )
+        else:
+            for e in timeline:
+                if e.category == "PRICE" and is_fallback_title(e):
+                    e.title = rule_based_price_title(e)
+            await _enrich_announcement_details(timeline)
 
         # 4) 신규 이벤트만 DB 저장
         await _notify("saving", "저장 중...", 90)
@@ -545,9 +434,89 @@ class HistoryAgentUseCase:
             period=period,
             count=len(timeline),
             events=timeline,
+            asset_type=asset_type,
         )
         await self._redis.setex(cache_key, _CACHE_TTL, response.model_dump_json())
         logger.info("[HistoryAgent] 완료: ticker=%s, period=%s, total=%d", ticker, period, len(timeline))
+        return response
+
+    async def _execute_index_timeline(
+        self,
+        ticker: str,
+        period: str,
+        cache_key: str,
+        on_progress: Optional[Callable[[str, str, int], Awaitable[None]]],
+        enrich_titles: bool,
+    ) -> TimelineResponse:
+        async def _notify(step: str, label: str, pct: int) -> None:
+            if on_progress:
+                try:
+                    await on_progress(step, label, pct)
+                except Exception:
+                    pass
+
+        logger.info("[HistoryAgent] INDEX 경로: PRICE + MACRO 수집 시작 (기업이벤트·공시 생략)")
+        await _notify("data_fetch", "데이터 수집 중...", 10)
+
+        region = _INDEX_REGION.get(ticker, _DEFAULT_INDEX_REGION)
+        price_result, macro_result = await asyncio.gather(
+            GetPriceEventsUseCase(stock_bars_port=self._stock_bars_port).execute(
+                ticker=ticker, period=period,
+            ),
+            GetEconomicEventsUseCase(fred_macro_port=self._fred_macro_port).execute(
+                period=period, region=region,
+            ),
+            return_exceptions=True,
+        )
+
+        timeline: List[TimelineEvent] = []
+        if isinstance(price_result, PriceEventsResponse):
+            events = _from_price_events(price_result)
+            timeline.extend(events)
+            logger.info("[HistoryAgent]   └ 가격 이벤트: %d건", len(events))
+        else:
+            logger.warning("[HistoryAgent]   └ 가격 이벤트 수집 실패: %s", price_result)
+
+        if isinstance(macro_result, EconomicEventsResponse):
+            events = _from_macro_events(macro_result)
+            timeline.extend(events)
+            logger.info("[HistoryAgent]   └ MACRO 이벤트: %d건", len(events))
+        else:
+            logger.warning("[HistoryAgent]   └ MACRO 이벤트 수집 실패 (graceful degradation): %s", macro_result)
+
+        timeline.sort(key=lambda e: e.date, reverse=True)
+
+        db_map = await self._load_enrichments(ticker, timeline)
+        new_events = self._apply_enrichments(ticker, timeline, db_map)
+        logger.info(
+            "[HistoryAgent] DB enrichment 조회: hit=%d, miss=%d",
+            len(timeline) - len(new_events), len(new_events),
+        )
+
+        await _enrich_causality(ticker, timeline, is_index=True)
+
+        await _notify("title_gen", "AI 타이틀 생성 중...", 70)
+        if enrich_titles:
+            await asyncio.gather(
+                enrich_price_titles(timeline, is_index=True),
+                enrich_macro_titles(timeline),
+            )
+        else:
+            for e in timeline:
+                if e.category == "PRICE" and is_fallback_title(e):
+                    e.title = rule_based_price_title(e)
+
+        await self._save_enrichments(ticker, new_events)
+
+        response = TimelineResponse(
+            ticker=ticker,
+            period=period,
+            count=len(timeline),
+            events=timeline,
+            asset_type="INDEX",
+        )
+        await self._redis.setex(cache_key, _CACHE_TTL, response.model_dump_json())
+        logger.info("[HistoryAgent] INDEX 완료: ticker=%s, period=%s, total=%d", ticker, period, len(timeline))
         return response
 
     async def _load_enrichments(

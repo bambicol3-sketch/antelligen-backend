@@ -1,5 +1,5 @@
 from datetime import date
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel
 
@@ -12,7 +12,7 @@ class HypothesisResult(BaseModel):
 class TimelineEvent(BaseModel):
     title: str                           # AI 생성 이벤트 타이틀
     date: date
-    category: str   # PRICE | CORPORATE | ANNOUNCEMENT
+    category: str   # PRICE | CORPORATE | ANNOUNCEMENT | MACRO
     type: str
     detail: str
     source: Optional[str] = None
@@ -27,3 +27,4 @@ class TimelineResponse(BaseModel):
     count: int
     events: List[TimelineEvent]
     is_etf: bool = False
+    asset_type: Literal["EQUITY", "INDEX", "ETF", "UNKNOWN"] = "EQUITY"
