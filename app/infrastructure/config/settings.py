@@ -60,6 +60,10 @@ class Settings(BaseSettings):
 
     dart_api_key: str = ""
 
+    fred_api_key: str = ""
+
+    finnhub_api_key: str = ""
+
     # US market support
     enable_us_tickers: bool = False
     sec_edgar_user_agent: str = "Antelligen research@example.com"
