@@ -80,6 +80,47 @@ def test_from_price_events_no_change_pct_for_52w_and_excludes_high_52w():
     assert events[0].change_pct is None
 
 
+def test_from_price_events_collapses_multiple_low_52w_to_one():
+    """S2-3: 같은 기간 내 LOW_52W가 여러 건이면 1건(최신)만 남는다."""
+    resp = PriceEventsResponse(
+        ticker="NVDA",
+        period="1Y",
+        count=4,
+        events=[
+            _pr("LOW_52W", 80.0, 90),
+            _pr("LOW_52W", 75.0, 60),
+            _pr("LOW_52W", 70.0, 30),   # 최신 + 최저
+            _pr("SURGE", 7.0, 5),
+        ],
+    )
+    events = _from_price_events(resp)
+    low = [e for e in events if e.type == "LOW_52W"]
+    assert len(low) == 1
+    # 최신 날짜가 유지되었는지만 검증 (value 필드는 TimelineEvent에 없음)
+    assert low[0].date == _TODAY - datetime.timedelta(days=30)
+    # 다른 타입(SURGE)은 유지
+    assert any(e.type == "SURGE" for e in events)
+
+
+def test_from_price_events_caps_to_history_price_event_cap(monkeypatch):
+    """S2-4: history_price_event_cap 초과 시 price_importance 상위 N개만 남는다."""
+    from app.infrastructure.config import settings as settings_module
+
+    mutated = settings_module.get_settings()
+    monkeypatch.setattr(mutated, "history_price_event_cap", 5, raising=False)
+    monkeypatch.setattr(settings_module, "get_settings", lambda: mutated)
+
+    # 10건 GAP_UP — importance는 value 크기에 비례 (큰 변동이 상위)
+    large_events = [_pr("SURGE", 10.0 - i * 0.5, day_offset=i) for i in range(10)]
+    resp = PriceEventsResponse(ticker="X", period="1Y", count=10, events=large_events)
+
+    events = _from_price_events(resp)
+    assert len(events) == 5
+    # 상위 5개는 큰 change_pct 순서
+    change_pcts = [e.change_pct for e in events]
+    assert change_pcts == sorted(change_pcts, reverse=True)
+
+
 # ─────────────────────────────────────────────────────────────
 # _price_importance: 우선순위 정렬
 # ─────────────────────────────────────────────────────────────
@@ -178,15 +219,19 @@ async def test_enrich_price_titles_prioritizes_causality_over_raw_change():
         captured.extend(targets)
         return [f"LLM-{i}" for i in range(len(targets))]
 
-    with patch(
-        "app.domains.history_agent.application.service.title_generation_service.PRICE_LLM_TOP_N",
-        1,
-    ):
+    from app.infrastructure.config.settings import get_settings
+
+    get_settings.cache_clear()
+    original_top_n = get_settings().history_price_llm_top_n
+    get_settings().history_price_llm_top_n = 1
+    try:
         with patch(
             "app.domains.history_agent.application.service.title_generation_service.batch_titles",
             new=AsyncMock(side_effect=fake_batch_titles),
         ):
             await _enrich_price_titles(events)
+    finally:
+        get_settings().history_price_llm_top_n = original_top_n
 
     assert len(captured) == 1
     assert captured[0] is weak_surge_causal

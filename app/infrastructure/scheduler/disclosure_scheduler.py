@@ -16,6 +16,7 @@ from app.infrastructure.scheduler.disclosure_jobs import (
 
 from app.infrastructure.scheduler.nasdaq_jobs import job_collect_nasdaq_bars
 from app.infrastructure.scheduler.macro_jobs import job_refresh_market_risk
+from app.infrastructure.scheduler.macro_timeline_jobs import job_warmup_macro_timeline
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,17 @@ def create_disclosure_scheduler() -> AsyncIOScheduler:
         name="Refresh macro market-risk snapshot",
         replace_existing=True,
         misfire_grace_time=600,
+    )
+
+    # Daily 04:15 KST — macro-timeline(1Y/5Y/10Y × US/KR/GLOBAL) Redis 워밍업
+    # 품질 리포트 S1-2: cold 요청 180s 타임아웃 방지
+    scheduler.add_job(
+        job_warmup_macro_timeline,
+        trigger=CronTrigger(hour=4, minute=15, timezone=KST),
+        id="warmup_macro_timeline",
+        name="Warm up macro-timeline Redis cache",
+        replace_existing=True,
+        misfire_grace_time=1800,
     )
 
     # -- Seasonal report collection --

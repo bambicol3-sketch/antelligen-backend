@@ -26,8 +26,6 @@ from app.domains.history_agent.domain.entity.event_enrichment import (
     compute_detail_hash,
 )
 
-pytestmark = pytest.mark.asyncio
-
 _TODAY = datetime.date.today()
 _TICKER = "AAPL"
 
@@ -71,6 +69,7 @@ def _make_usecase(enrichment_repo) -> HistoryAgentUseCase:
         redis=redis_mock,
         enrichment_repo=enrichment_repo,
         asset_type_port=MagicMock(),
+        fred_macro_port=MagicMock(),
     )
 
 
@@ -233,7 +232,7 @@ async def test_no_llm_title_call_when_enrich_titles_false():
     repo.upsert_bulk = AsyncMock(return_value=0)
 
     asset_type_mock = AsyncMock()
-    asset_type_mock.is_etf = AsyncMock(return_value=False)
+    asset_type_mock.get_quote_type = AsyncMock(return_value="EQUITY")
 
     usecase = HistoryAgentUseCase(
         stock_bars_port=MagicMock(),
@@ -244,6 +243,7 @@ async def test_no_llm_title_call_when_enrich_titles_false():
         redis=redis_mock,
         enrichment_repo=repo,
         asset_type_port=asset_type_mock,
+        fred_macro_port=MagicMock(),
     )
 
     _module = "app.domains.history_agent.application.usecase.history_agent_usecase"
@@ -282,6 +282,9 @@ async def test_redis_cache_hit_skips_db_query():
     repo = AsyncMock()
     repo.find_by_keys = AsyncMock()
 
+    asset_type_mock = AsyncMock()
+    asset_type_mock.get_quote_type = AsyncMock(return_value="EQUITY")
+
     usecase = HistoryAgentUseCase(
         stock_bars_port=MagicMock(),
         yfinance_corporate_port=MagicMock(),
@@ -290,7 +293,8 @@ async def test_redis_cache_hit_skips_db_query():
         dart_announcement_client=MagicMock(),
         redis=redis_mock,
         enrichment_repo=repo,
-        asset_type_port=MagicMock(),
+        asset_type_port=asset_type_mock,
+        fred_macro_port=MagicMock(),
     )
 
     result = await usecase.execute(ticker=_TICKER, period="1M")

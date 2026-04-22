@@ -1,50 +1,31 @@
-import asyncio
 import logging
+from functools import partial
 from typing import List
 
 import yfinance as yf
 
+from app.domains.dashboard.adapter.outbound.external._yfinance_retry import (
+    yfinance_call_with_retry,
+)
 from app.domains.dashboard.application.port.out.stock_bars_port import StockBarsPort
 from app.domains.dashboard.domain.entity.stock_bar import StockBar
 from app.domains.dashboard.domain.exception.stock_exception import (
     InvalidTickerException,
     StockDataFetchException,
 )
+from app.infrastructure.external.yahoo_ticker import normalize_yfinance_ticker
 
 logger = logging.getLogger(__name__)
-
-_INDEX_TICKER_MAP = {
-    "IXIC": "^IXIC",
-    "DJI": "^DJI",
-    "INDU": "^DJI",
-    "GSPC": "^GSPC",
-    "SPX": "^GSPC",
-    "RUT": "^RUT",
-    "VIX": "^VIX",
-    "FTSE": "^FTSE",
-    "N225": "^N225",
-    "HSI": "^HSI",
-    "GDAXI": "^GDAXI",
-    "KS11": "^KS11",
-    "KQ11": "^KQ11",
-    "KS200": "^KS200",
-    "SSEC": "000001.SS",
-    "TNX": "^TNX",
-}
-
-
-def _to_yfinance_ticker(ticker: str) -> str:
-    if ticker.startswith("^"):
-        return ticker
-    return _INDEX_TICKER_MAP.get(ticker, ticker)
 
 
 class YahooFinanceStockClient(StockBarsPort):
 
     async def fetch_stock_bars(self, ticker: str, period: str) -> tuple[str, List[StockBar]]:
         try:
-            loop = asyncio.get_event_loop()
-            company_name, df = await loop.run_in_executor(None, self._fetch_sync, ticker, period)
+            company_name, df = await yfinance_call_with_retry(
+                partial(self._fetch_sync, ticker, period),
+                logger_prefix=f"YahooFinanceStock:{ticker}",
+            )
             return company_name, self._to_entities(df, ticker, period)
         except (InvalidTickerException, StockDataFetchException):
             raise
@@ -54,7 +35,7 @@ class YahooFinanceStockClient(StockBarsPort):
 
     def _fetch_sync(self, ticker: str, period: str) -> tuple[str, object]:
         logger.info("[YahooFinanceStock] %s 데이터 수집 시작 (period=%s)", ticker, period)
-        yf_ticker = _to_yfinance_ticker(ticker)
+        yf_ticker = normalize_yfinance_ticker(ticker)
         t = yf.Ticker(yf_ticker)
         df = t.history(period=period, interval="1d")
         if df is None or df.empty:
