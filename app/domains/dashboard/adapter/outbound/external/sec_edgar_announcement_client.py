@@ -52,6 +52,27 @@ _TITLE_KEYWORD_MAP: list[tuple[str, AnnouncementEventType]] = [
 
 _cik_cache: dict[str, str] = {}
 
+# Yahoo Finance 형태의 non-US ticker suffix 목록. SEC EDGAR는 US 상장 종목만 커버하므로
+# 조기 반환해 불필요한 network I/O와 로그 노이즈("CIK 조회 실패") 제거 (S2-6).
+# - KS/KQ: 한국 KOSPI/KOSDAQ
+# - T: 일본 Tokyo, HK: 홍콩, SS/SZ: 상해/심천, L: 런던
+# - PA: 파리, DE: 독일 Xetra, TO: 토론토, AX: 호주 ASX
+_NON_US_TICKER_SUFFIXES = (
+    ".KS", ".KQ", ".T", ".HK", ".SS", ".SZ", ".L", ".PA", ".DE", ".TO", ".AX",
+)
+
+
+def _is_non_us_ticker(ticker: str) -> bool:
+    """Yahoo Finance 형식의 non-US ticker 판별.
+
+    - `^` prefix: 지수 (^IXIC, ^GSPC, ^VIX, ^TNX, ...)
+    - `.XX` suffix: 각 국가별 거래소
+    """
+    upper = ticker.upper()
+    if upper.startswith("^"):
+        return True
+    return upper.endswith(_NON_US_TICKER_SUFFIXES)
+
 # company_tickers.json은 약 10MB에 가까운 SEC 전역 공개 데이터.
 # ticker별 조회마다 재다운로드하면 SEC에서 429(Too Many Requests)로 밴한다.
 # 모듈 전역 한 번만 fetch하도록 single-flight 락 + 캐시.
@@ -158,6 +179,10 @@ class SecEdgarAnnouncementClient(SecEdgarAnnouncementPort):
         start_date: date,
         end_date: date,
     ) -> List[AnnouncementEvent]:
+        # S2-6: non-US ticker는 SEC 커버리지 밖이므로 진입 단계에서 skip.
+        # WARNING 로그도 남기지 않음 — 매 호출 반복되는 정상 시그널이므로 노이즈.
+        if _is_non_us_ticker(ticker):
+            return []
         try:
             cik = await self._get_cik(ticker)
             if not cik:
@@ -170,6 +195,13 @@ class SecEdgarAnnouncementClient(SecEdgarAnnouncementPort):
 
     async def _get_cik(self, ticker: str) -> Optional[str]:
         upper = ticker.upper()
+
+        # S2-6: non-US ticker는 SEC EDGAR 커버리지 밖이므로 조기 반환.
+        # `^IXIC`/`.KS`/`.KQ` 등이 매 호출마다 company_tickers.json을 조회하며
+        # 로그에 "CIK 조회 실패" 수백 건을 남기던 문제 해소.
+        if _is_non_us_ticker(upper):
+            return None
+
         if upper in _cik_cache:
             return _cik_cache[upper]
 
