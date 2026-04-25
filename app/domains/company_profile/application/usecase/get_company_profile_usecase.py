@@ -18,6 +18,7 @@ from app.domains.company_profile.application.port.out.us_company_name_port impor
 )
 from app.domains.company_profile.domain.entity.company_profile import CompanyProfile
 from app.domains.company_profile.domain.value_object.business_overview import BusinessOverview
+from app.domains.dashboard.application.port.out.asset_type_port import AssetTypePort
 from app.domains.disclosure.application.port.company_repository_port import CompanyRepositoryPort
 from app.domains.disclosure.application.port.rag_chunk_repository_port import (
     RagChunkRepositoryPort,
@@ -32,6 +33,8 @@ OVERVIEW_CACHE_TTL_SECONDS = 86400 * 7  # 7d — LLM 생성 결과
 RAG_CONTEXT_CHUNK_LIMIT = 5
 RAG_CONTEXT_MAX_CHARS = 3000
 
+_NON_EQUITY_ASSET_TYPES = {"INDEX", "ETF"}
+
 
 class GetCompanyProfileUseCase:
     def __init__(
@@ -43,6 +46,7 @@ class GetCompanyProfileUseCase:
         business_overview: Optional[BusinessOverviewPort] = None,
         overview_cache: Optional[BusinessOverviewCachePort] = None,
         us_company_name: Optional[UsCompanyNamePort] = None,
+        asset_type_port: Optional[AssetTypePort] = None,
     ):
         self._company_repo = company_repository
         self._dart = dart_company_info
@@ -51,14 +55,21 @@ class GetCompanyProfileUseCase:
         self._business_overview = business_overview
         self._overview_cache = overview_cache
         self._us_company_name = us_company_name
+        self._asset_type_port = asset_type_port
 
     async def execute(
         self, ticker: str
     ) -> tuple[Optional[CompanyProfile], Optional[BusinessOverview]]:
         """기업 정보(profile) + 사업 개요(overview)를 함께 반환한다.
 
-        ticker 형식으로 KR/US 를 자동 판별하여 분기한다. US 는 LLM-only 경로.
+        asset_type 분류 → INDEX/ETF 면 LLM-only 자산 설명 경로,
+        EQUITY 면 region(KR/US) 으로 다시 분기.
         """
+        asset_type = await self._classify_asset_type(ticker)
+
+        if asset_type in _NON_EQUITY_ASSET_TYPES:
+            return await self._execute_index_or_etf(ticker, asset_type)
+
         region = MarketRegionResolver.resolve(ticker)
         if region.is_us():
             return await self._execute_us(ticker)
@@ -68,6 +79,54 @@ class GetCompanyProfileUseCase:
             return None, None
 
         overview = await self._fetch_overview(profile)
+        return profile, overview
+
+    async def _classify_asset_type(self, ticker: str) -> str:
+        """yfinance quoteType 으로 자산 유형 분류. 미주입/UNKNOWN/미지원 → "EQUITY" 폴백."""
+        if self._asset_type_port is None:
+            return "EQUITY"
+        try:
+            raw = await self._asset_type_port.get_quote_type(ticker)
+        except Exception as exc:
+            logger.warning(
+                "[CompanyProfile] asset_type 조회 실패 ticker=%s: %s — EQUITY 로 폴백",
+                ticker, exc,
+            )
+            return "EQUITY"
+        upper = (raw or "").upper()
+        if upper in _NON_EQUITY_ASSET_TYPES or upper == "EQUITY":
+            return upper
+        # MUTUALFUND / CRYPTOCURRENCY / CURRENCY / UNKNOWN 등은 EQUITY 경로로 폴백 (현 동작 보존)
+        return "EQUITY"
+
+    async def _execute_index_or_etf(
+        self, ticker: str, asset_type: str
+    ) -> tuple[Optional[CompanyProfile], Optional[BusinessOverview]]:
+        """INDEX/ETF — DART/SEC/RAG 미적용. 합성 profile + LLM-only 자산 설명."""
+        upper_ticker = ticker.upper()
+
+        profile = CompanyProfile(
+            corp_code=upper_ticker,
+            corp_name=upper_ticker,
+            corp_name_eng=upper_ticker,
+            stock_name=upper_ticker,
+            stock_code=upper_ticker,
+            ceo_nm=None,
+            corp_cls=None,
+            jurir_no=None,
+            bizr_no=None,
+            adres=None,
+            hm_url=None,
+            ir_url=None,
+            phn_no=None,
+            fax_no=None,
+            induty_code=None,
+            est_dt=None,
+            acc_mt=None,
+            asset_type=asset_type,
+        )
+
+        overview = await self._fetch_asset_overview(ticker, asset_type)
         return profile, overview
 
     async def _execute_us(
@@ -100,6 +159,7 @@ class GetCompanyProfileUseCase:
             induty_code=None,
             est_dt=None,
             acc_mt=None,
+            asset_type="EQUITY",
         )
 
         overview = await self._fetch_overview(profile)
@@ -125,7 +185,9 @@ class GetCompanyProfileUseCase:
         if self._business_overview is None or self._overview_cache is None:
             return None
 
-        cached = await self._overview_cache.get(profile.corp_code)
+        cache_key = self._overview_cache_key(profile)
+
+        cached = await self._overview_cache.get(cache_key)
         if cached is not None:
             return cached
 
@@ -139,8 +201,36 @@ class GetCompanyProfileUseCase:
         if overview is None:
             return None
 
-        await self._overview_cache.save(profile.corp_code, overview, OVERVIEW_CACHE_TTL_SECONDS)
+        await self._overview_cache.save(cache_key, overview, OVERVIEW_CACHE_TTL_SECONDS)
         return overview
+
+    async def _fetch_asset_overview(
+        self, ticker: str, asset_type: str
+    ) -> Optional[BusinessOverview]:
+        if self._business_overview is None or self._overview_cache is None:
+            return None
+
+        cache_key = f"asset:{ticker.upper()}"
+
+        cached = await self._overview_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        overview = await self._business_overview.generate_for_asset(
+            ticker=ticker,
+            asset_type=asset_type,
+        )
+        if overview is None:
+            return None
+
+        await self._overview_cache.save(cache_key, overview, OVERVIEW_CACHE_TTL_SECONDS)
+        return overview
+
+    @staticmethod
+    def _overview_cache_key(profile: CompanyProfile) -> str:
+        if profile.asset_type in _NON_EQUITY_ASSET_TYPES:
+            return f"asset:{profile.corp_code}"
+        return profile.corp_code
 
     async def _gather_rag_context(self, corp_code: str) -> Optional[str]:
         if self._rag_repo is None:

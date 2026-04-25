@@ -26,9 +26,12 @@ class CompanyProfileResponse(BaseModel):
     est_dt: Optional[str] = None
     acc_mt: Optional[str] = None
 
+    asset_type: str = "EQUITY"  # "EQUITY" | "INDEX" | "ETF"
     business_summary: Optional[str] = None
     main_revenue_sources: list[str] = Field(default_factory=list)
-    overview_source: Optional[str] = None  # "rag_summary" | "llm_only" | None
+    overview_source: Optional[str] = None  # "rag_summary" | "llm_only" | "asset_llm_only" | None
+    founding_story: Optional[str] = None
+    business_model: Optional[str] = None
 
     @classmethod
     def from_entity(
@@ -55,7 +58,10 @@ class CompanyProfileResponse(BaseModel):
             induty_code=profile.induty_code,
             est_dt=profile.est_dt,
             acc_mt=profile.acc_mt,
+            asset_type=profile.asset_type,
             business_summary=overview.summary if overview else None,
             main_revenue_sources=list(overview.revenue_sources) if overview else [],
             overview_source=overview.source if overview else None,
+            founding_story=overview.founding_story if overview else None,
+            business_model=overview.business_model if overview else None,
         )

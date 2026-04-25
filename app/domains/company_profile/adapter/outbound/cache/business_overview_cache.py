@@ -18,7 +18,8 @@ class RedisBusinessOverviewCache(BusinessOverviewCachePort):
 
     @staticmethod
     def _key(corp_code: str) -> str:
-        return f"company_overview:{corp_code}"
+        # v2 — payload 에 founding_story / business_model 추가됨. 기존 v1 키는 자연 만료까지 무시.
+        return f"company_overview:v2:{corp_code}"
 
     async def get(self, corp_code: str) -> Optional[BusinessOverview]:
         try:
@@ -30,6 +31,8 @@ class RedisBusinessOverviewCache(BusinessOverviewCachePort):
                 summary=payload["summary"],
                 revenue_sources=payload.get("revenue_sources", []),
                 source=payload.get("source", "llm_only"),
+                founding_story=payload.get("founding_story"),
+                business_model=payload.get("business_model"),
             )
         except (aioredis.RedisError, json.JSONDecodeError, KeyError, TypeError) as e:
             logger.warning("[BusinessOverview] 캐시 조회 실패 corp_code=%s: %s", corp_code, e)
@@ -41,6 +44,8 @@ class RedisBusinessOverviewCache(BusinessOverviewCachePort):
                 "summary": overview.summary,
                 "revenue_sources": list(overview.revenue_sources),
                 "source": overview.source,
+                "founding_story": overview.founding_story,
+                "business_model": overview.business_model,
             }
             await self._redis.setex(
                 self._key(corp_code),
