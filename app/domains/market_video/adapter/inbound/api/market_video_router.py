@@ -1,20 +1,23 @@
 from typing import Optional
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Cookie, Depends, Query
+from fastapi import APIRouter, Cookie, Depends, Header, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.exception.app_exception import AppException
 from app.common.response.base_response import BaseResponse
 from app.domains.account.adapter.outbound.persistence.account_repository_impl import AccountRepositoryImpl
+from app.domains.account.adapter.outbound.persistence.watchlist_repository_impl import WatchlistRepositoryImpl
 from app.domains.market_video.adapter.outbound.external.youtube_channel_video_client import YoutubeChannelVideoClient
 from app.domains.market_video.adapter.outbound.external.youtube_comment_client import YoutubeCommentClient
+from app.domains.market_video.adapter.outbound.external.youtube_search_client import YoutubeSearchClient
 from app.domains.market_video.adapter.outbound.external.youtube_video_client import YoutubeVideoClient
 from app.domains.market_video.adapter.outbound.persistence.collected_video_repository_impl import CollectedVideoRepositoryImpl
 from app.domains.market_video.adapter.outbound.persistence.video_comment_repository_impl import VideoCommentRepositoryImpl
 from app.domains.market_video.application.usecase.collect_defense_video_usecase import CollectDefenseVideoUseCase
 from app.domains.market_video.application.usecase.collect_video_comments_usecase import CollectVideoCommentsUseCase
 from app.domains.market_video.application.usecase.extract_nouns_usecase import ExtractNounsUseCase
+from app.domains.market_video.application.usecase.get_watchlist_youtube_feed_usecase import GetWatchlistYoutubeFeedUseCase
 from app.domains.market_video.application.usecase.get_youtube_video_list_usecase import GetYoutubeVideoListUseCase
 from app.infrastructure.cache.redis_client import get_redis
 from app.infrastructure.config.settings import get_settings
@@ -24,6 +27,35 @@ from app.infrastructure.nlp.kiwi_morpheme_analyzer import get_morpheme_analyzer
 SESSION_KEY_PREFIX = "session:"
 
 router = APIRouter(prefix="/youtube", tags=["youtube"])
+
+
+@router.get("/feed")
+async def get_youtube_feed(
+    page_token: Optional[str] = Query(default=None, description="페이지 토큰 (더보기용)"),
+    user_token: Optional[str] = Cookie(default=None),
+    authorization: Optional[str] = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+    redis: aioredis.Redis = Depends(get_redis),
+):
+    """인증된 사용자는 관심종목 기반 YouTube 영상을, 비로그인 사용자는 전체 테마 기본 영상을 반환한다."""
+    account_id: Optional[int] = None
+    token = user_token
+    if not token and authorization and authorization.startswith("Bearer "):
+        token = authorization.removeprefix("Bearer ").strip()
+    if token:
+        account_id_str = await redis.get(f"{SESSION_KEY_PREFIX}{token}")
+        if account_id_str:
+            account_id = int(account_id_str)
+
+    settings = get_settings()
+    search_client = YoutubeSearchClient(api_key=settings.youtube_api_key)
+    watchlist_repo = WatchlistRepositoryImpl(db)
+    usecase = GetWatchlistYoutubeFeedUseCase(
+        youtube_search_port=search_client,
+        watchlist_port=watchlist_repo,
+    )
+    result = await usecase.execute(account_id=account_id, page_token=page_token)
+    return BaseResponse.ok(data=result)
 
 
 @router.get("/list")

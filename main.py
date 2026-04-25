@@ -24,6 +24,7 @@ from app.infrastructure.database.database import AsyncSessionLocal, Base, engine
 from app.infrastructure.database.vector_database import VectorBase, vector_engine
 
 import app.domains.account.infrastructure.orm.account_orm  # noqa: F401
+import app.domains.account.infrastructure.orm.user_watchlist_orm  # noqa: F401
 import app.domains.news.infrastructure.orm.saved_article_orm  # noqa: F401
 import app.domains.news.infrastructure.orm.user_saved_article_orm  # noqa: F401
 import app.domains.news.infrastructure.orm.article_content_orm  # noqa: F401
