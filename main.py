@@ -58,6 +58,42 @@ configure_langsmith()
 settings: Settings = get_settings()
 
 
+async def _try_restore_macro_snapshot(max_age_hours: int) -> bool:
+    """Redis 에 저장된 매크로 스냅샷이 충분히 신선하면 메모리 store 로 복원.
+
+    프로세스 재시작 / hot-reload 시 YouTube/LLM 재호출을 회피한다.
+    복원 성공 시 True, 캐시 없음/만료/파싱 실패 시 False.
+    """
+    import json
+    from datetime import timedelta
+
+    from app.domains.macro.adapter.outbound.cache.market_risk_snapshot_store import (
+        get_market_risk_snapshot_store,
+    )
+    from app.domains.macro.application.response.market_risk_judgement_response import (
+        MarketRiskJudgementResponse,
+    )
+    from app.infrastructure.cache.redis_client import redis_client
+    from app.infrastructure.scheduler.macro_jobs import MACRO_SNAPSHOT_REDIS_KEY
+
+    try:
+        raw = await redis_client.get(MACRO_SNAPSHOT_REDIS_KEY)
+        if not raw:
+            return False
+        payload = json.loads(raw)
+        updated_at = datetime.fromisoformat(payload["updated_at"])
+        if datetime.now() - updated_at > timedelta(hours=max_age_hours):
+            return False
+        response = MarketRiskJudgementResponse.model_validate(payload["response"])
+        get_market_risk_snapshot_store().set(response, updated_at=updated_at)
+        return True
+    except Exception as e:
+        logging.getLogger(__name__).warning(
+            "[Startup] Macro snapshot restore from Redis failed: %s", e
+        )
+        return False
+
+
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     if not await check_db_health():
@@ -153,11 +189,18 @@ async def lifespan(application: FastAPI):
     except Exception as e:
         logging.getLogger(__name__).error("Nasdaq bootstrap failed (server continues normally): %s", str(e))
 
-    # 거시 경제 리스크 스냅샷 최초 로딩 (이후 매일 새벽 5시에 스케줄러가 갱신)
+    # 거시 경제 리스크 스냅샷 — Redis 영속 캐시가 4h 이내면 복원, 아니면 신규 생성.
+    # YouTube/LLM quota 절약 목적: 코드 hot-reload 마다 매번 호출되는 것을 방지한다.
     from app.infrastructure.scheduler.macro_jobs import job_refresh_market_risk
 
     try:
-        await job_refresh_market_risk()
+        restored = await _try_restore_macro_snapshot(max_age_hours=4)
+        if restored:
+            logging.getLogger(__name__).info(
+                "[Startup] Macro snapshot restored from Redis (skip bootstrap)"
+            )
+        else:
+            await job_refresh_market_risk()
     except Exception as e:
         logging.getLogger(__name__).error(
             "Macro snapshot bootstrap failed (server continues normally): %s", str(e)
