@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import logging
 from datetime import date, timedelta
 from typing import Awaitable, Callable, Dict, List, Optional, Tuple
@@ -263,16 +264,28 @@ _NEWS_SUMMARY_BATCH_SYSTEM = """\
 """
 
 
-async def _enrich_news_details(timeline: List[TimelineEvent]) -> None:
+_NEWS_SUMMARY_CACHE_VERSION = "v1"
+_NEWS_SUMMARY_CACHE_TTL_SEC = 90 * 24 * 60 * 60  # 90 days
+
+
+def _news_summary_cache_key(title: str) -> str:
+    h = hashlib.sha256(title.encode()).hexdigest()[:16]
+    return f"news_summary:{_NEWS_SUMMARY_CACHE_VERSION}:{h}"
+
+
+async def _enrich_news_details(
+    timeline: List[TimelineEvent],
+    redis: Optional[aioredis.Redis] = None,
+) -> None:
     """NEWS 이벤트의 영문 title/detail을 한국어 요약 한 문장으로 동시에 교체한다.
 
     - needs_news_korean_translation 판정(영문·10자 이상) 통과한 항목만 요약 대상
     - title과 detail은 동일 요약문으로 교체 (UI 카드의 제목/본문 일관성 유지)
     - feature flag: history_news_korean_summary_enabled (기본 True)
-    - §13.4 B follow-up: 이전 단건 ainvoke × N 병렬을 batch_titles 로 교체.
-      gpt-5-mini 의 단건 latency p99 (~30s) 가 wall-clock 지배 → 1 LLM 호출에
-      여러 건 묶어 latency 평탄화. 실패 분류·재시도·logging 은 title 배치 패턴
-      재사용.
+    - §13.4 B follow-up #1: 단건 ainvoke × N → batch_titles 1+ batch
+    - §13.4 B follow-up #2 (이 변경): Redis 캐시(news_summary:v1:{sha256(title)[:16]})
+      로 영문 title 별 요약 영구 보존. 동일 NEWS 가 여러 ticker/호출에서 등장 시
+      LLM 호출 0회. TTL 90일.
     """
     if not get_settings().history_news_korean_summary_enabled:
         return
@@ -284,19 +297,69 @@ async def _enrich_news_details(timeline: List[TimelineEvent]) -> None:
     if not targets:
         return
 
-    logger.info("[HistoryAgent] ✦ 뉴스 한국어 요약 시작: %d건", len(targets))
+    cache_keys = [_news_summary_cache_key(e.title) for e in targets]
+    cached_values: List[Optional[bytes]] = []
+    if redis is not None:
+        try:
+            cached_values = await redis.mget(cache_keys)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[HistoryAgent] 뉴스 요약 캐시 mget 실패 — miss 로 진행: %s", exc)
+            cached_values = [None] * len(targets)
+    else:
+        cached_values = [None] * len(targets)
+
+    miss_targets: List[TimelineEvent] = []
+    miss_originals: List[str] = []
+    hit_count = 0
+    for event, cached in zip(targets, cached_values):
+        if cached is not None:
+            summary = cached.decode() if isinstance(cached, (bytes, bytearray)) else str(cached)
+            event.title = summary
+            event.detail = summary
+            hit_count += 1
+        else:
+            miss_originals.append(event.title)
+            miss_targets.append(event)
+
+    if not miss_targets:
+        logger.info(
+            "[HistoryAgent] ✦ 뉴스 한국어 요약 — 전체 캐시 적중: %d건", hit_count,
+        )
+        return
+
+    logger.info(
+        "[HistoryAgent] ✦ 뉴스 한국어 요약 시작: %d건 (cache hit=%d, miss=%d)",
+        len(targets), hit_count, len(miss_targets),
+    )
     summaries = await batch_titles(
-        items=targets,
+        items=miss_targets,
         system_prompt=_NEWS_SUMMARY_BATCH_SYSTEM,
         build_line=lambda e: e.title,
         get_fallback=lambda e: e.title,
         batch_size=get_settings().history_news_summary_batch_size,
     )
-    for event, summary in zip(targets, summaries):
+    save_pairs: List[Tuple[str, str]] = []
+    for event, original_title, summary in zip(miss_targets, miss_originals, summaries):
         if not summary:
             continue
         event.title = summary
         event.detail = summary
+        if summary != original_title:
+            save_pairs.append((original_title, summary))
+
+    if redis is not None and save_pairs:
+        try:
+            async with redis.pipeline(transaction=False) as pipe:
+                for original_title, summary in save_pairs:
+                    pipe.setex(
+                        _news_summary_cache_key(original_title),
+                        _NEWS_SUMMARY_CACHE_TTL_SEC,
+                        summary,
+                    )
+                await pipe.execute()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[HistoryAgent] 뉴스 요약 캐시 저장 실패 (graceful): %s", exc)
+
     logger.info("[HistoryAgent] ✦ 뉴스 한국어 요약 완료")
 
 
@@ -816,13 +879,13 @@ class HistoryAgentUseCase:
                 causality_task,
                 enrich_other_titles(timeline),
                 _enrich_announcement_details(timeline),
-                _enrich_news_details(timeline),
+                _enrich_news_details(timeline, redis=self._redis),
             )
         else:
             await asyncio.gather(
                 causality_task,
                 _enrich_announcement_details(timeline),
-                _enrich_news_details(timeline),
+                _enrich_news_details(timeline, redis=self._redis),
             )
 
         # 4) 신규 이벤트만 DB 저장
@@ -895,10 +958,10 @@ class HistoryAgentUseCase:
         if enrich_titles:
             await asyncio.gather(
                 enrich_macro_titles(timeline),
-                _enrich_news_details(timeline),
+                _enrich_news_details(timeline, redis=self._redis),
             )
         else:
-            await _enrich_news_details(timeline)
+            await _enrich_news_details(timeline, redis=self._redis)
 
         await self._save_enrichments(ticker, new_events)
 
@@ -986,12 +1049,12 @@ class HistoryAgentUseCase:
                 enrich_macro_titles(timeline),
                 enrich_other_titles(timeline),
                 _enrich_announcement_details(timeline),
-                _enrich_news_details(timeline),
+                _enrich_news_details(timeline, redis=self._redis),
             )
         else:
             await asyncio.gather(
                 _enrich_announcement_details(timeline),
-                _enrich_news_details(timeline),
+                _enrich_news_details(timeline, redis=self._redis),
             )
 
         await self._save_enrichments(ticker, new_events)
