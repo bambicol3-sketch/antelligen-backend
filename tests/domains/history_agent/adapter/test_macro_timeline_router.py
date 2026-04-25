@@ -56,7 +56,7 @@ async def test_macro_timeline_returns_sorted_events(app_with_mocks):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get(
             "/api/v1/history-agent/macro-timeline",
-            params={"period": "5Y", "region": "US", "limit": 10},
+            params={"lookback_range": "5Y", "region": "US", "limit": 10},
         )
     assert response.status_code == 200
     body = response.json()
@@ -92,7 +92,7 @@ async def test_macro_timeline_cache_hit_skips_usecase(app_with_mocks):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get(
             "/api/v1/history-agent/macro-timeline",
-            params={"period": "1Y", "region": "US"},
+            params={"lookback_range": "1Y", "region": "US"},
         )
     assert response.status_code == 200
     uc.execute.assert_not_awaited()

@@ -209,7 +209,13 @@ async def stream_timeline(
 
 @router.get("/macro-timeline", response_model=BaseResponse[TimelineResponse])
 async def get_macro_timeline(
-    period: str = Query("1Y", description=f"기간: {', '.join(sorted(_VALID_MACRO_PERIODS))}"),
+    lookback_range: str = Query(
+        "1Y",
+        description=(
+            f"조회 기간(과거): {', '.join(sorted(_VALID_MACRO_PERIODS))}. "
+            "ADR-0001: chart_interval(봉 단위) 와 다른 시맨틱."
+        ),
+    ),
     region: str = Query("US", description="리전: US | KR | GLOBAL"),
     limit: Optional[int] = Query(
         None, ge=1, le=100, description="반환 이벤트 수 (미지정 시 macro_timeline_top_n)",
@@ -230,16 +236,16 @@ async def get_macro_timeline(
             status_code=400,
             message=f"유효하지 않은 region입니다. 사용 가능: {', '.join(sorted(_VALID_MACRO_REGIONS))}",
         )
-    period_upper = period.upper()
-    if period_upper not in _VALID_MACRO_PERIODS:
+    lookback_upper = lookback_range.upper()
+    if lookback_upper not in _VALID_MACRO_PERIODS:
         raise AppException(
             status_code=400,
-            message=f"유효하지 않은 period입니다. 사용 가능: {', '.join(sorted(_VALID_MACRO_PERIODS))}",
+            message=f"유효하지 않은 lookback_range입니다. 사용 가능: {', '.join(sorted(_VALID_MACRO_PERIODS))}",
         )
 
     settings = get_settings()
     effective_limit = limit if limit is not None else settings.macro_timeline_top_n
-    cache_key = f"macro_timeline:{_MACRO_CACHE_VERSION}:{region_upper}:{period_upper}:{effective_limit}"
+    cache_key = f"macro_timeline:{_MACRO_CACHE_VERSION}:{region_upper}:{lookback_upper}:{effective_limit}"
 
     cached = await redis.get(cache_key)
     if cached:
@@ -249,11 +255,11 @@ async def get_macro_timeline(
             logger.warning("[macro-timeline] 캐시 디코드 실패: %s", exc)
 
     events = await usecase.execute(
-        region=region_upper, period=period_upper, top_n=effective_limit,
+        region=region_upper, period=lookback_upper, top_n=effective_limit,
     )
     response = TimelineResponse(
         ticker=None,
-        period=period_upper,
+        period=lookback_upper,
         count=len(events),
         events=events,
         region=region_upper,
@@ -265,7 +271,13 @@ async def get_macro_timeline(
 
 @router.get("/macro-timeline/stream")
 async def stream_macro_timeline(
-    period: str = Query("1Y", description=f"기간: {', '.join(sorted(_VALID_MACRO_PERIODS))}"),
+    lookback_range: str = Query(
+        "1Y",
+        description=(
+            f"조회 기간(과거): {', '.join(sorted(_VALID_MACRO_PERIODS))}. "
+            "ADR-0001: chart_interval(봉 단위) 와 다른 시맨틱."
+        ),
+    ),
     region: str = Query("US", description="리전: US | KR | GLOBAL"),
     limit: Optional[int] = Query(
         None, ge=1, le=100, description="반환 이벤트 수 (미지정 시 macro_timeline_top_n)",
@@ -275,7 +287,7 @@ async def stream_macro_timeline(
         get_collect_important_macro_events_usecase,
     ),
 ):
-    """macro-timeline을 SSE로 스트리밍. 장기 period(5Y/10Y) cold 요청 UX 개선용.
+    """macro-timeline을 SSE로 스트리밍. 장기 lookback_range(5Y/10Y) cold 요청 UX 개선용.
 
     캐시 적중 시 즉시 done 이벤트 1개만 전송. 미적중 시 collect/rank/finalize
     단계별 progress 이벤트를 송신하고 완료 시 done 이벤트로 응답 전체 전달.
@@ -287,17 +299,17 @@ async def stream_macro_timeline(
             status_code=400,
             message=f"유효하지 않은 region입니다. 사용 가능: {', '.join(sorted(_VALID_MACRO_REGIONS))}",
         )
-    period_upper = period.upper()
-    if period_upper not in _VALID_MACRO_PERIODS:
+    lookback_upper = lookback_range.upper()
+    if lookback_upper not in _VALID_MACRO_PERIODS:
         raise AppException(
             status_code=400,
-            message=f"유효하지 않은 period입니다. 사용 가능: {', '.join(sorted(_VALID_MACRO_PERIODS))}",
+            message=f"유효하지 않은 lookback_range입니다. 사용 가능: {', '.join(sorted(_VALID_MACRO_PERIODS))}",
         )
 
     settings = get_settings()
     effective_limit = limit if limit is not None else settings.macro_timeline_top_n
     cache_key = (
-        f"macro_timeline:{_MACRO_CACHE_VERSION}:{region_upper}:{period_upper}:{effective_limit}"
+        f"macro_timeline:{_MACRO_CACHE_VERSION}:{region_upper}:{lookback_upper}:{effective_limit}"
     )
 
     queue: asyncio.Queue = asyncio.Queue()
@@ -321,13 +333,13 @@ async def stream_macro_timeline(
 
             events = await usecase.execute(
                 region=region_upper,
-                period=period_upper,
+                period=lookback_upper,
                 top_n=effective_limit,
                 on_progress=on_progress,
             )
             response = TimelineResponse(
                 ticker=None,
-                period=period_upper,
+                period=lookback_upper,
                 count=len(events),
                 events=events,
                 region=region_upper,
@@ -338,12 +350,12 @@ async def stream_macro_timeline(
             await queue.put({"type": "done", "data": payload})
         except asyncio.CancelledError:
             logger.info("[stream_macro_timeline] 태스크 취소 (region=%s period=%s)",
-                        region_upper, period_upper)
+                        region_upper, lookback_upper)
             raise
         except Exception as exc:
             logger.exception(
                 "[stream_macro_timeline] 오류 region=%s period=%s error_type=%s",
-                region_upper, period_upper, type(exc).__name__,
+                region_upper, lookback_upper, type(exc).__name__,
             )
             await queue.put({"type": "error", "message": "매크로 타임라인 생성 중 오류가 발생했습니다."})
 
