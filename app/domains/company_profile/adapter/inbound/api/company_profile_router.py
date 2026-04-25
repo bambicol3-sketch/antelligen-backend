@@ -25,6 +25,12 @@ from app.domains.company_profile.application.response.company_profile_response i
 from app.domains.company_profile.application.usecase.get_company_profile_usecase import (
     GetCompanyProfileUseCase,
 )
+from app.domains.dashboard.adapter.outbound.external.cached_asset_type_adapter import (
+    CachedAssetTypeAdapter,
+)
+from app.domains.dashboard.adapter.outbound.external.yahoo_finance_asset_type_client import (
+    YahooFinanceAssetTypeClient,
+)
 from app.domains.disclosure.adapter.outbound.external.sec_edgar_api_client import (
     SecEdgarApiClient,
 )
@@ -51,6 +57,7 @@ async def get_company_profile(
 ):
     settings = get_settings()
     sec_client = SecEdgarApiClient(user_agent=settings.sec_edgar_user_agent)
+    asset_type_port = CachedAssetTypeAdapter(YahooFinanceAssetTypeClient(), redis)
 
     usecase = GetCompanyProfileUseCase(
         company_repository=CompanyRepositoryImpl(db),
@@ -60,6 +67,7 @@ async def get_company_profile(
         business_overview=OpenAIBusinessOverviewClient(),
         overview_cache=RedisBusinessOverviewCache(redis),
         us_company_name=SecCompanyNameAdapter(sec_client),
+        asset_type_port=asset_type_port,
     )
     profile, overview = await usecase.execute(ticker)
     if profile is None:

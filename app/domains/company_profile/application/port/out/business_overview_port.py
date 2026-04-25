@@ -13,3 +13,11 @@ class BusinessOverviewPort(ABC):
         rag_context: Optional[str],
     ) -> Optional[BusinessOverview]:
         pass
+
+    @abstractmethod
+    async def generate_for_asset(
+        self,
+        ticker: str,
+        asset_type: str,  # "INDEX" | "ETF"
+    ) -> Optional[BusinessOverview]:
+        pass

@@ -21,6 +21,7 @@ class CompanyProfile:
     induty_code: Optional[str]
     est_dt: Optional[str]
     acc_mt: Optional[str]
+    asset_type: str = "EQUITY"  # "EQUITY" | "INDEX" | "ETF"
 
     CORP_CLS_LABELS = {
         "Y": "유가증권(KOSPI)",
