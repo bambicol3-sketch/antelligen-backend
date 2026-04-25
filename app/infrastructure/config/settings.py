@@ -58,8 +58,7 @@ class Settings(BaseSettings):
     langsmith_project: str = "antelligen-backend"
     langsmith_endpoint: str = "https://api.smith.langchain.com"
 
-    dart_api_key: str = ""
-
+    # FRED (Federal Reserve Economic Data) — 금리·유가·환율 등 매크로 지표 조회
     fred_api_key: str = ""
 
     finnhub_api_key: str = ""
@@ -89,6 +88,17 @@ class Settings(BaseSettings):
     macro_timeline_top_n: int = 30
     macro_importance_llm_enabled: bool = True
     macro_cache_ttl_seconds: int = 86_400
+
+    # US market support
+    enable_us_tickers: bool = False
+    sec_edgar_user_agent: str = "Antelligen research@example.com"
+
+    # Source tier weighting
+    enable_source_tier_weighting: bool = False
+    tier_multiplier_high: float = 1.0
+    tier_multiplier_medium: float = 0.7
+    tier_multiplier_medium_low: float = 0.5
+    tier_multiplier_low: float = 0.3
 
     model_config = {
         "env_file": ".env",

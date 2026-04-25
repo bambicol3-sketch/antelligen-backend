@@ -19,6 +19,7 @@ from app.domains.news.adapter.outbound.external.openai_news_signal_adapter impor
 from app.domains.news.adapter.outbound.external.serp_news_search_provider import (
     SerpNewsSearchProvider,
 )
+from app.domains.account.adapter.outbound.persistence.watchlist_repository_impl import WatchlistRepositoryImpl
 from app.domains.news.adapter.outbound.persistence.collected_news_repository_impl import (
     CollectedNewsRepositoryImpl,
 )
@@ -38,6 +39,8 @@ from app.domains.news.application.response.save_article_response import (
 from app.domains.news.application.response.search_news_response import (
     SearchNewsResponse,
 )
+from app.domains.news.application.response.watchlist_news_feed_response import WatchlistNewsFeedResponse
+from app.domains.news.application.usecase.get_watchlist_news_feed_usecase import GetWatchlistNewsFeedUseCase
 from app.domains.news.application.response.saved_articles_response import (
     SavedArticlesResponse,
 )
@@ -287,4 +290,30 @@ async def get_news_agent_result(
     analysis_adapter = OpenAINewsSignalAdapter(api_key=settings.openai_api_key)
     usecase = AnalyzeNewsSignalUseCase(repository=repository, analysis_port=analysis_adapter)
     result = await usecase.execute(ticker)
+    return BaseResponse.ok(data=result)
+
+
+@router.get("/watchlist-feed", response_model=BaseResponse[WatchlistNewsFeedResponse])
+async def get_watchlist_news_feed(
+    user_token: Optional[str] = Cookie(default=None),
+    authorization: Optional[str] = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+    vector_db: AsyncSession = Depends(get_vector_db),
+    redis: aioredis.Redis = Depends(get_redis),
+):
+    """인증된 사용자의 관심종목 기반 뉴스 피드를 반환한다."""
+    token = _extract_token(user_token, authorization)
+    if not token:
+        raise AppException(status_code=401, message="인증이 필요합니다.")
+
+    account_id_str = await redis.get(f"{SESSION_KEY_PREFIX}{token}")
+    if not account_id_str:
+        raise AppException(status_code=401, message="세션이 만료되었거나 유효하지 않습니다.")
+
+    account_id = int(account_id_str)
+    usecase = GetWatchlistNewsFeedUseCase(
+        watchlist_port=WatchlistRepositoryImpl(db),
+        news_repository=CollectedNewsRepositoryImpl(vector_db),
+    )
+    result = await usecase.execute(account_id)
     return BaseResponse.ok(data=result)

@@ -1,6 +1,6 @@
 from app.domains.stock_theme.application.port.out.stock_theme_repository_port import StockThemeRepositoryPort
 from app.domains.stock_theme.domain.entity.stock_theme import StockTheme
-from app.domains.stock_theme.domain.service.stock_theme_seed_data import DEFENSE_STOCK_SEED
+from app.domains.stock_theme.domain.service.stock_theme_seed_data import ALL_THEME_STOCK_SEED
 
 
 class SeedStockThemesUseCase:
@@ -8,11 +8,8 @@ class SeedStockThemesUseCase:
         self._repository = repository
 
     async def execute(self) -> None:
-        if await self._repository.exists_any():
-            return
-
         seed_entities = [
             StockTheme(id=None, name=item["name"], code=item["code"], themes=item["themes"])
-            for item in DEFENSE_STOCK_SEED
+            for item in ALL_THEME_STOCK_SEED
         ]
         await self._repository.save_all(seed_entities)

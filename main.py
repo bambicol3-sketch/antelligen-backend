@@ -6,6 +6,7 @@ if sys.platform == "win32":
 
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,6 +24,7 @@ from app.infrastructure.database.database import AsyncSessionLocal, Base, engine
 from app.infrastructure.database.vector_database import VectorBase, vector_engine
 
 import app.domains.account.infrastructure.orm.account_orm  # noqa: F401
+import app.domains.account.infrastructure.orm.user_watchlist_orm  # noqa: F401
 import app.domains.news.infrastructure.orm.saved_article_orm  # noqa: F401
 import app.domains.news.infrastructure.orm.user_saved_article_orm  # noqa: F401
 import app.domains.news.infrastructure.orm.article_content_orm  # noqa: F401
@@ -44,6 +46,7 @@ import app.domains.investment.infrastructure.orm.investment_youtube_video_orm  #
 import app.domains.investment.infrastructure.orm.investment_youtube_video_comment_orm  # noqa: F401
 import app.domains.investment.infrastructure.orm.investment_news_content_orm  # noqa: F401
 import app.domains.news.infrastructure.orm.investment_news_orm  # noqa: F401
+import app.domains.schedule.infrastructure.orm.economic_event_orm  # noqa: F401
 import app.domains.dashboard.infrastructure.orm.nasdaq_bar_orm  # noqa: F401
 import app.domains.history_agent.infrastructure.orm.event_enrichment_orm  # noqa: F401
 
@@ -70,7 +73,13 @@ async def lifespan(application: FastAPI):
         await SeedStockThemesUseCase(StockThemeRepositoryImpl(session)).execute()
 
     # Bootstrap initial data (runs only when companies table is empty)
-    from app.infrastructure.scheduler.disclosure_jobs import job_bootstrap, job_collect_news
+    from app.infrastructure.scheduler.disclosure_jobs import (
+        job_bootstrap,
+        job_collect_news,
+        job_incremental_collect,
+        job_refresh_company_list,
+        job_process_documents,
+    )
 
     try:
         await job_bootstrap()
@@ -82,6 +91,59 @@ async def lifespan(application: FastAPI):
     except Exception as e:
         logging.getLogger(__name__).error("News bootstrap failed (server continues normally): %s", str(e))
 
+    # Catch-up scheduled jobs on server startup (skip when recently run)
+    from datetime import timedelta
+
+    from app.domains.disclosure.adapter.outbound.persistence.collection_job_repository_impl import (
+        CollectionJobRepositoryImpl,
+    )
+    from app.domains.disclosure.adapter.outbound.persistence.disclosure_repository_impl import (
+        DisclosureRepositoryImpl,
+    )
+
+    try:
+        await job_incremental_collect()
+    except Exception as e:
+        logging.getLogger(__name__).error(
+            "Incremental collect on startup failed (server continues normally): %s", str(e)
+        )
+
+    try:
+        async with AsyncSessionLocal() as session:
+            latest = await CollectionJobRepositoryImpl(session).find_latest_by_job_name(
+                "refresh_company_list"
+            )
+            should_run = (
+                latest is None
+                or latest.status != "success"
+                or latest.started_at is None
+                or (datetime.now() - latest.started_at) > timedelta(hours=24)
+            )
+        if should_run:
+            await job_refresh_company_list()
+        else:
+            logging.getLogger(__name__).info(
+                "[Startup] refresh_company_list skipped (last success < 24h)"
+            )
+    except Exception as e:
+        logging.getLogger(__name__).error(
+            "Refresh company list on startup failed (server continues normally): %s", str(e)
+        )
+
+    try:
+        async with AsyncSessionLocal() as session:
+            unprocessed = await DisclosureRepositoryImpl(session).find_unprocessed_core(limit=1)
+        if unprocessed:
+            await job_process_documents()
+        else:
+            logging.getLogger(__name__).info(
+                "[Startup] process_documents skipped (no unprocessed core disclosures)"
+            )
+    except Exception as e:
+        logging.getLogger(__name__).error(
+            "Process documents on startup failed (server continues normally): %s", str(e)
+        )
+
     from app.infrastructure.scheduler.nasdaq_jobs import job_bootstrap_nasdaq
 
     try:
@@ -89,7 +151,7 @@ async def lifespan(application: FastAPI):
     except Exception as e:
         logging.getLogger(__name__).error("Nasdaq bootstrap failed (server continues normally): %s", str(e))
 
-    # 거시 경제 리스크 스냅샷 최초 로딩 (이후 매일 새벽 1시에 스케줄러가 갱신)
+    # 거시 경제 리스크 스냅샷 최초 로딩 (이후 매일 새벽 5시에 스케줄러가 갱신)
     from app.infrastructure.scheduler.macro_jobs import job_refresh_market_risk
 
     try:
@@ -97,6 +159,16 @@ async def lifespan(application: FastAPI):
     except Exception as e:
         logging.getLogger(__name__).error(
             "Macro snapshot bootstrap failed (server continues normally): %s", str(e)
+        )
+
+    # 잠정실적 일정 최초 적재 (이후 분기 초 + 주간으로 스케줄러가 재수집)
+    from app.infrastructure.scheduler.corp_earnings_jobs import job_refresh_corp_earnings
+
+    try:
+        await job_refresh_corp_earnings()
+    except Exception as e:
+        logging.getLogger(__name__).error(
+            "Corp earnings bootstrap failed (server continues normally): %s", str(e)
         )
 
     from app.infrastructure.scheduler.disclosure_scheduler import create_disclosure_scheduler
