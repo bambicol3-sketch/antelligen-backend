@@ -64,6 +64,9 @@ class Settings(BaseSettings):
 
     finnhub_api_key: str = ""
 
+    krx_id: str = ""
+    krx_pw: str = ""
+
     # US market support
     enable_us_tickers: bool = False
     sec_edgar_user_agent: str = "Antelligen research@example.com"

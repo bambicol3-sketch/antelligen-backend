@@ -8,7 +8,7 @@ from app.domains.market_video.application.port.out.youtube_video_provider import
 )
 from app.domains.market_video.domain.entity.video_item import VideoItem
 
-SEARCH_KEYWORD = "한국 방산주 방위산업 주식"
+SEARCH_KEYWORD = "주식 경제 증시 투자"
 MAX_RESULTS = 9
 
 

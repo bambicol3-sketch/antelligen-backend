@@ -30,6 +30,7 @@ from app.domains.history_agent.adapter.inbound.api.history_agent_router import r
 from app.domains.macro.adapter.inbound.api.macro_router import router as macro_router
 from app.domains.study.adapter.inbound.api.study_router import router as study_router
 from app.domains.company_profile.adapter.inbound.api.company_profile_router import router as company_profile_router
+from app.domains.smart_money.adapter.inbound.api.smart_money_router import router as smart_money_router
 
 # 모든 API는 /api/v1 prefix를 가진다.
 api_v1_router = APIRouter(prefix="/api/v1")
@@ -59,4 +60,5 @@ api_v1_router.include_router(history_agent_router)   # HISTORY AGENT: /api/v1/hi
 api_v1_router.include_router(macro_router)       # MACRO: /api/v1/macro/...
 api_v1_router.include_router(study_router)    # STUDY: /api/v1/study/...
 api_v1_router.include_router(company_profile_router)  # COMPANY PROFILE: /api/v1/company-profile/...
+api_v1_router.include_router(smart_money_router)      # SMART MONEY: /api/v1/smart-money/...
 # api_v1_router.include_router(finance_router)  # 재무 에이전트

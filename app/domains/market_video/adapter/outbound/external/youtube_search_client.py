@@ -6,7 +6,7 @@ from app.domains.market_video.application.port.youtube_search_port import Youtub
 from app.domains.market_video.domain.entity.youtube_video import YoutubeVideo
 
 YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
-SEARCH_KEYWORD = "방산주 방위산업 한국 주식"
+SEARCH_KEYWORD = "주식 경제 증시 투자"
 PAGE_SIZE = 9
 
 
@@ -32,7 +32,7 @@ class YoutubeSearchClient(YoutubeSearchPort):
         if page_token:
             params["pageToken"] = page_token
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(YOUTUBE_SEARCH_URL, params=params)
             response.raise_for_status()
             data = response.json()

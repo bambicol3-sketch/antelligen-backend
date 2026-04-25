@@ -8,9 +8,14 @@ from app.domains.market_video.application.response.watchlist_feed_response impor
     FeedVideoItem,
     WatchlistYoutubeFeedResponse,
 )
-from app.domains.stock_theme.domain.value_object.theme_name import MAIN_THEMES
-
-_DEFAULT_KEYWORDS = [f"{t} 주식" for t in MAIN_THEMES]
+_DEFAULT_KEYWORDS = [
+    "주식 경제 투자",
+    "코스피 증시 분석",
+    "미국 주식 투자",
+    "반도체 주식",
+    "성장주 가치주",
+]
+_MAX_KEYWORDS = 5
 PAGE_SIZE = 9
 
 
@@ -42,7 +47,7 @@ class GetWatchlistYoutubeFeedUseCase:
             watchlist = await self._watchlist_port.find_all_by_account(account_id)
             if watchlist:
                 has_watchlist = True
-                keywords = [item.stock_name for item in watchlist]
+                keywords = [item.stock_name for item in watchlist[:_MAX_KEYWORDS]]
             else:
                 keywords = _DEFAULT_KEYWORDS
         else:
@@ -53,6 +58,10 @@ class GetWatchlistYoutubeFeedUseCase:
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # 3. 결과 수집 — video_url 기준 중복 제거
+        errors = [r for r in results if isinstance(r, Exception)]
+        if len(errors) == len(results):
+            raise errors[0]
+
         seen: set[str] = set()
         all_items: list[FeedVideoItem] = []
         for result in results:
