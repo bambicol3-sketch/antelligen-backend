@@ -15,11 +15,16 @@ from app.infrastructure.langgraph.llm_factory import get_workflow_llm
 
 logger = logging.getLogger(__name__)
 
-TITLE_MODEL = "gpt-5-mini"
+TITLE_MODEL = "gpt-5-mini"  # backward-compat constant — settings 로 override 권장
 
 
 def _settings():
     return get_settings()
+
+
+def _title_model() -> str:
+    """런타임 모델 결정. settings.history_title_llm_model 가 우선."""
+    return _settings().history_title_llm_model or TITLE_MODEL
 
 
 # 배치/동시성은 런타임에 get_settings()로 읽는다.
@@ -190,7 +195,7 @@ async def batch_titles(
 
     fallback_fn = get_fallback or default_fallback
     fallbacks = [fallback_fn(item) for item in items]
-    llm = get_workflow_llm(model=TITLE_MODEL)
+    llm = get_workflow_llm(model=_title_model())
     settings = _settings()
     if concurrency is None:
         concurrency = settings.history_title_concurrency

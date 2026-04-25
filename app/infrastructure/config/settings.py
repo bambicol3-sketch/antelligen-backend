@@ -70,6 +70,10 @@ class Settings(BaseSettings):
     history_title_concurrency: int = 10
     # NEWS 요약은 배치 내 LLM 처리 시간 선형 비례 → 작은 배치 + 병렬이 유리
     history_news_summary_batch_size: int = 5
+    # History 타이틀/요약 LLM 모델 (env 로 swap 평가 가능)
+    # gpt-5-mini (default, reasoning model 정확도 ↑ latency ↑)
+    # gpt-4o-mini (latency ↓ 가벼운 task 우선)
+    history_title_llm_model: str = "gpt-5-mini"
     history_causality_pre_days: int = 14
     history_causality_post_days: int = 3
     # T2-1 Phase B: INDEX causality LLM 확장 feature flag.
