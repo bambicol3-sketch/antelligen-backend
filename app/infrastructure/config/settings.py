@@ -58,8 +58,6 @@ class Settings(BaseSettings):
     langsmith_project: str = "antelligen-backend"
     langsmith_endpoint: str = "https://api.smith.langchain.com"
 
-    dart_api_key: str = ""
-
     # FRED (Federal Reserve Economic Data) — 금리·유가·환율 등 매크로 지표 조회
     fred_api_key: str = ""
 

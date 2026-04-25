@@ -1,18 +1,9 @@
-"""국내 코스피·코스닥 주요 기업 잠정실적 발표 일정 (정적 데이터).
+"""DART 잠정실적 수집 대상 기업 메타데이터.
 
-**대상**: KOSPI 200 · KOSDAQ 150 · 코리아 밸류업 지수(VALUEUP) 구성 종목 중 시총 상위
-및 분기 잠정실적을 선공시하는 주요 종목.
+KOSPI 200 · KOSDAQ 150 · 코리아 밸류업 지수(VALUEUP) 구성 종목 중 시총 상위
+및 분기 잠정실적을 선공시하는 주요 종목으로 구성된 정적 universe 정의.
 
-**발표 시점 패턴**:
-- 조기 공시(EARLY, ~분기말 후 1~2주): 삼성전자·LG전자 등 대표 선공시 기업
-- 표준(DEFAULT, ~3~4주): 대부분 대형주 (예: SK하이닉스 Q1=4/23, 현대차·기아 등)
-- 발표일은 기업이 KRX 에 자율 통보하므로 해마다 ±며칠 변동. 매년 초에 실제 공시 일정으로
-  해당 딕셔너리를 수동 업데이트 권장.
-
-**분석 파이프라인 제외**: `source='corp_earnings'` 는 `_ANALYSIS_EXCLUDED_SOURCES`
-로 필터링되어 LLM 분석 대상에서 제외되며 '다가오는 경제 일정' 표시에만 사용된다.
-
-**리스트 갱신**: KRX 공식 구성 종목 변경 시(매년 6월·12월 정기변경) `COMPANIES` 튜플 업데이트.
+KRX 정기변경(연 2회: 6월·12월) 시 수동 갱신.
 """
 
 from dataclasses import dataclass
@@ -26,21 +17,12 @@ INDEX_VALUEUP = "VALUEUP"
 
 @dataclass(frozen=True)
 class CorpMeta:
-    ticker: str
+    ticker: str               # 6자리 종목코드
     name: str
     market: str               # KOSPI | KOSDAQ
     indices: Tuple[str, ...]  # (KOSPI200, VALUEUP) 등
 
 
-# ==========================================================
-# 기업 구성 (시총 상위 + 분기 잠정실적 선공시 관행이 있는 종목 위주)
-# ==========================================================
-# KOSPI200 : 100+ 종목
-# KOSDAQ150: 50+ 종목
-# VALUEUP  : KOSPI200 내 정부 선정 약 60종
-#
-# 지수 태그는 KRX 공표 + 공개 리서치 정보 기반. 정기변경 시 갱신 필요.
-# ==========================================================
 COMPANIES: Tuple[CorpMeta, ...] = (
     # ─────── KOSPI 대형주 (상당수 VALUEUP) ───────
     CorpMeta("005930", "삼성전자",              "KOSPI",  (INDEX_KOSPI200, INDEX_VALUEUP)),
@@ -191,7 +173,6 @@ COMPANIES: Tuple[CorpMeta, ...] = (
     CorpMeta("108860", "셀바스AI",              "KOSDAQ", (INDEX_KOSDAQ150,)),
     CorpMeta("064290", "인텍플러스",             "KOSDAQ", (INDEX_KOSDAQ150,)),
     CorpMeta("005290", "동진쎄미켐",             "KOSDAQ", (INDEX_KOSDAQ150,)),
-    CorpMeta("277810", "레인보우로보틱스2",      "KOSDAQ", (INDEX_KOSDAQ150,)),  # (의도: 서로 다른 종목이나 불확실 — 필요 시 제거)
     CorpMeta("131970", "두산테스나",             "KOSDAQ", (INDEX_KOSDAQ150,)),
     CorpMeta("090460", "비에이치홀딩스",          "KOSDAQ", (INDEX_KOSDAQ150,)),
     CorpMeta("048410", "현대바이오",             "KOSDAQ", (INDEX_KOSDAQ150,)),
@@ -209,144 +190,27 @@ COMPANIES: Tuple[CorpMeta, ...] = (
 )
 
 
-# ==========================================================
-# 기업별 잠정실적 발표 일정 (월, 일, 분기)
-# ==========================================================
-# 현실 패턴: 잠정실적은 **분기 종료 후 1~2개월 내** 발표됨 (조기 공시 기업은 1~2주).
-# 기업이 KRX 에 실제 공시 일정을 통보하는 시점은 분기 종료 후 1~2주쯤이며, 그 정보를
-# 수집해 업데이트해야 한다. 이 모듈은 과거 공시 패턴 기반 best-effort 추정치로,
-# `job_refresh_corp_earnings` 가 분기 초에 재생성하여 신규 일정을 upsert 한다.
-
-# 대표 선공시 기업 (분기 종료 후 1~2주 내 발표)
-_SAMSUNG_SCHEDULE = (
-    (1, 8, "Q4"), (4, 8, "Q1"), (7, 8, "Q2"), (10, 8, "Q3"),
-)
-_LG_ELECTRONICS_SCHEDULE = (
-    (1, 7, "Q4"), (4, 5, "Q1"), (7, 5, "Q2"), (10, 5, "Q3"),
-)
-
-# 중반 공시 (분기 종료 후 ~4주)
-_SK_HYNIX_SCHEDULE = (
-    (1, 23, "Q4"), (4, 23, "Q1"), (7, 24, "Q2"), (10, 28, "Q3"),
-)
-_HYUNDAI_SCHEDULE = (
-    (1, 25, "Q4"), (4, 25, "Q1"), (7, 25, "Q2"), (10, 24, "Q3"),
-)
-_POSCO_SCHEDULE = (
-    (1, 31, "Q4"), (4, 28, "Q1"), (7, 28, "Q2"), (10, 27, "Q3"),
-)
-_SAMSUNG_SDI_SCHEDULE = (
-    (1, 30, "Q4"), (4, 29, "Q1"), (7, 30, "Q2"), (10, 30, "Q3"),
-)
-_LG_CHEM_SCHEDULE = (
-    (1, 30, "Q4"), (4, 28, "Q1"), (7, 28, "Q2"), (10, 27, "Q3"),
-)
-_SAMSUNG_BIO_SCHEDULE = (
-    (1, 24, "Q4"), (4, 24, "Q1"), (7, 24, "Q2"), (10, 24, "Q3"),
-)
-_MOBIS_SCHEDULE = (
-    (1, 28, "Q4"), (4, 28, "Q1"), (7, 28, "Q2"), (10, 27, "Q3"),
-)
-_KB_FINANCE_SCHEDULE = (
-    (2, 7, "Q4"), (4, 25, "Q1"), (7, 25, "Q2"), (10, 24, "Q3"),
-)
-_SHINHAN_FINANCE_SCHEDULE = (
-    (2, 7, "Q4"), (4, 26, "Q1"), (7, 26, "Q2"), (10, 25, "Q3"),
-)
-_HANA_FINANCE_SCHEDULE = (
-    (2, 5, "Q4"), (4, 27, "Q1"), (7, 27, "Q2"), (10, 26, "Q3"),
-)
-_WOORI_FINANCE_SCHEDULE = (
-    (2, 5, "Q4"), (4, 27, "Q1"), (7, 27, "Q2"), (10, 26, "Q3"),
-)
-
-# 후반 공시 (분기 종료 후 ~5~8주, 예: NAVER·카카오·한국전력·통신사 등)
-_NAVER_SCHEDULE = (
-    (2, 3, "Q4"), (5, 3, "Q1"), (8, 5, "Q2"), (11, 4, "Q3"),
-)
-_KAKAO_SCHEDULE = (
-    (2, 8, "Q4"), (5, 8, "Q1"), (8, 8, "Q2"), (11, 7, "Q3"),
-)
-_KT_SCHEDULE = (
-    (2, 10, "Q4"), (5, 10, "Q1"), (8, 10, "Q2"), (11, 10, "Q3"),
-)
-_SKT_SCHEDULE = (
-    (2, 7, "Q4"), (5, 7, "Q1"), (8, 7, "Q2"), (11, 6, "Q3"),
-)
-_KEPCO_SCHEDULE = (
-    (2, 15, "Q4"), (5, 15, "Q1"), (8, 14, "Q2"), (11, 14, "Q3"),
-)
-_SAMSUNG_LIFE_SCHEDULE = (
-    (2, 17, "Q4"), (5, 15, "Q1"), (8, 14, "Q2"), (11, 14, "Q3"),
-)
-
-# 기본 (대다수 대형주·중형주) — 분기 종료 후 약 5주 근처 (2월 초 · 5월 초 · 8월 초 · 11월 초)
-_DEFAULT_SCHEDULE = (
-    (2, 8, "Q4"), (5, 8, "Q1"), (8, 8, "Q2"), (11, 8, "Q3"),
-)
-
-# 기업별 특화 일정. 미등록 기업은 _DEFAULT_SCHEDULE 사용.
-_COMPANY_SCHEDULES: dict[str, Tuple[Tuple[int, int, str], ...]] = {
-    "005930": _SAMSUNG_SCHEDULE,          # 삼성전자
-    "066570": _LG_ELECTRONICS_SCHEDULE,   # LG전자
-    "000660": _SK_HYNIX_SCHEDULE,         # SK하이닉스
-    "005380": _HYUNDAI_SCHEDULE,          # 현대차
-    "000270": _HYUNDAI_SCHEDULE,          # 기아
-    "012330": _MOBIS_SCHEDULE,            # 현대모비스
-    "005490": _POSCO_SCHEDULE,            # POSCO홀딩스
-    "051910": _LG_CHEM_SCHEDULE,          # LG화학
-    "006400": _SAMSUNG_SDI_SCHEDULE,      # 삼성SDI
-    "207940": _SAMSUNG_BIO_SCHEDULE,      # 삼성바이오로직스
-    "105560": _KB_FINANCE_SCHEDULE,       # KB금융
-    "055550": _SHINHAN_FINANCE_SCHEDULE,  # 신한지주
-    "086790": _HANA_FINANCE_SCHEDULE,     # 하나금융지주
-    "316140": _WOORI_FINANCE_SCHEDULE,    # 우리금융지주
-    "035420": _NAVER_SCHEDULE,            # NAVER
-    "035720": _KAKAO_SCHEDULE,            # 카카오
-    "017670": _SKT_SCHEDULE,              # SK텔레콤
-    "030200": _KT_SCHEDULE,               # KT
-    "015760": _KEPCO_SCHEDULE,            # 한국전력
-    "032830": _SAMSUNG_LIFE_SCHEDULE,     # 삼성생명
-}
-
-# 선공시(우선 표시) 기업 = 조기/특화 일정을 가진 기업으로 정의
-EARLY_PRIORITY_TICKERS = set(_COMPANY_SCHEDULES.keys())
-
-
-def is_early_announcer(ticker: str) -> bool:
-    return ticker in EARLY_PRIORITY_TICKERS
-
-
-def build_schedule(years: list[int]) -> list[dict]:
-    """각 기업·분기별 잠정실적 발표 예정일을 생성.
-
-    반환: [{ticker, name, market, indices, quarter, date_iso, is_early}, ...]
-    """
-    results: list[dict] = []
-    seen: set[tuple[str, str]] = set()  # (ticker, date) 중복 제거용
-    for corp in COMPANIES:
-        early = corp.ticker in EARLY_PRIORITY_TICKERS
-        schedule = _COMPANY_SCHEDULES.get(corp.ticker, _DEFAULT_SCHEDULE)
-        for year in years:
-            for month, day, quarter in schedule:
-                try:
-                    from datetime import date as _date
-                    d = _date(year, month, min(day, 28 if month == 2 else day))
-                    key = (corp.ticker, d.isoformat())
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    results.append(
-                        {
-                            "ticker": corp.ticker,
-                            "name": corp.name,
-                            "market": corp.market,
-                            "indices": list(corp.indices),
-                            "quarter": quarter,
-                            "date_iso": d.isoformat(),
-                            "is_early": early,
-                        }
-                    )
-                except ValueError:
-                    continue
-    return results
+# 시장 대표주 = UI 우선 표시(MEDIUM importance) 대상.
+# (조기/특화 발표 패턴을 가진 시총 상위 종목 위주)
+EARLY_PRIORITY_TICKERS: frozenset[str] = frozenset({
+    "005930",  # 삼성전자
+    "066570",  # LG전자
+    "000660",  # SK하이닉스
+    "005380",  # 현대차
+    "000270",  # 기아
+    "012330",  # 현대모비스
+    "005490",  # POSCO홀딩스
+    "051910",  # LG화학
+    "006400",  # 삼성SDI
+    "207940",  # 삼성바이오로직스
+    "105560",  # KB금융
+    "055550",  # 신한지주
+    "086790",  # 하나금융지주
+    "316140",  # 우리금융지주
+    "035420",  # NAVER
+    "035720",  # 카카오
+    "017670",  # SK텔레콤
+    "030200",  # KT
+    "015760",  # 한국전력
+    "032830",  # 삼성생명
+})

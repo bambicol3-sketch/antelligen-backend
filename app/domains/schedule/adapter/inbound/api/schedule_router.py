@@ -22,8 +22,8 @@ from app.domains.schedule.adapter.outbound.external.fred_investment_info_client 
 from app.domains.schedule.adapter.outbound.external.static_central_bank_event_client import (
     StaticCentralBankEventClient,
 )
-from app.domains.schedule.adapter.outbound.external.static_corp_earnings_event_client import (
-    StaticCorpEarningsEventClient,
+from app.domains.schedule.adapter.outbound.external.dart_corp_earnings_client import (
+    DartCorpEarningsClient,
 )
 from app.domains.schedule.adapter.outbound.external.yahoo_investment_info_client import (
     YahooInvestmentInfoClient,
@@ -199,7 +199,7 @@ async def sync_economic_events(
         clients=[
             FredEconomicEventClient(api_key=settings.fred_api_key),
             StaticCentralBankEventClient(),
-            StaticCorpEarningsEventClient(),
+            DartCorpEarningsClient(api_key=settings.open_dart_api_key),
         ]
     )
     repository = EconomicEventRepositoryImpl(db=db)
