@@ -227,8 +227,25 @@ async def _summarize_to_korean(detail: str) -> str:
         return detail
 
 
-async def _enrich_announcement_details(timeline: List[TimelineEvent]) -> None:
-    """ANNOUNCEMENT 이벤트의 영문 detail을 한국어 요약으로 교체한다."""
+_ANNOUNCEMENT_SUMMARY_CACHE_VERSION = "v1"
+_ANNOUNCEMENT_SUMMARY_CACHE_TTL_SEC = 90 * 24 * 60 * 60  # 90 days
+
+
+def _announcement_summary_cache_key(detail: str) -> str:
+    h = hashlib.sha256(detail.encode()).hexdigest()[:16]
+    return f"announcement_summary:{_ANNOUNCEMENT_SUMMARY_CACHE_VERSION}:{h}"
+
+
+async def _enrich_announcement_details(
+    timeline: List[TimelineEvent],
+    redis: Optional[aioredis.Redis] = None,
+) -> None:
+    """ANNOUNCEMENT 이벤트의 영문 detail을 한국어 요약으로 교체한다.
+
+    NEWS/MACRO 캐시 패턴(§13.4 B follow-up) 동일 적용:
+      announcement_summary:v1:{sha256(detail)[:16]} 키로 90일 TTL 영구 보존.
+      동일 공시 본문이 여러 ticker/호출에서 등장 시 LLM 호출 0회.
+    """
     targets = [
         e for e in timeline
         if e.category == "ANNOUNCEMENT" and needs_korean_summary(e.detail)
@@ -236,17 +253,66 @@ async def _enrich_announcement_details(timeline: List[TimelineEvent]) -> None:
     if not targets:
         return
 
-    logger.info("[HistoryAgent] ✦ 공시 한국어 요약 시작: %d건", len(targets))
+    cache_keys = [_announcement_summary_cache_key(e.detail) for e in targets]
+    cached_values: List[Optional[bytes]] = []
+    if redis is not None:
+        try:
+            cached_values = await redis.mget(cache_keys)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[HistoryAgent] 공시 요약 캐시 mget 실패 — miss 로 진행: %s", exc)
+            cached_values = [None] * len(targets)
+    else:
+        cached_values = [None] * len(targets)
+
+    miss_targets: List[TimelineEvent] = []
+    miss_originals: List[str] = []
+    hit_count = 0
+    for event, cached in zip(targets, cached_values):
+        if cached is not None:
+            summary = cached.decode() if isinstance(cached, (bytes, bytearray)) else str(cached)
+            event.detail = summary
+            hit_count += 1
+        else:
+            miss_originals.append(event.detail)
+            miss_targets.append(event)
+
+    if not miss_targets:
+        logger.info(
+            "[HistoryAgent] ✦ 공시 한국어 요약 — 전체 캐시 적중: %d건", hit_count,
+        )
+        return
+
+    logger.info(
+        "[HistoryAgent] ✦ 공시 한국어 요약 시작: %d건 (cache hit=%d, miss=%d)",
+        len(targets), hit_count, len(miss_targets),
+    )
     summaries = await asyncio.gather(
-        *[_summarize_to_korean(e.detail) for e in targets],
+        *[_summarize_to_korean(e.detail) for e in miss_targets],
         return_exceptions=True,
     )
 
-    for event, summary in zip(targets, summaries):
+    save_pairs: List[Tuple[str, str]] = []
+    for event, original_detail, summary in zip(miss_targets, miss_originals, summaries):
         if isinstance(summary, Exception):
             logger.warning("[HistoryAgent] 공시 요약 gather 예외: %s", summary)
             continue
         event.detail = summary
+        if summary != original_detail:
+            save_pairs.append((original_detail, summary))
+
+    if redis is not None and save_pairs:
+        try:
+            async with redis.pipeline(transaction=False) as pipe:
+                for original_detail, summary in save_pairs:
+                    pipe.setex(
+                        _announcement_summary_cache_key(original_detail),
+                        _ANNOUNCEMENT_SUMMARY_CACHE_TTL_SEC,
+                        summary,
+                    )
+                await pipe.execute()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[HistoryAgent] 공시 요약 캐시 저장 실패 (graceful): %s", exc)
+
     logger.info("[HistoryAgent] ✦ 공시 한국어 요약 완료")
 
 
@@ -877,13 +943,13 @@ class HistoryAgentUseCase:
             await asyncio.gather(
                 causality_task,
                 enrich_other_titles(timeline),
-                _enrich_announcement_details(timeline),
+                _enrich_announcement_details(timeline, redis=self._redis),
                 _enrich_news_details(timeline, redis=self._redis),
             )
         else:
             await asyncio.gather(
                 causality_task,
-                _enrich_announcement_details(timeline),
+                _enrich_announcement_details(timeline, redis=self._redis),
                 _enrich_news_details(timeline, redis=self._redis),
             )
 
@@ -1047,12 +1113,12 @@ class HistoryAgentUseCase:
             await asyncio.gather(
                 enrich_macro_titles(timeline, redis=self._redis),
                 enrich_other_titles(timeline),
-                _enrich_announcement_details(timeline),
+                _enrich_announcement_details(timeline, redis=self._redis),
                 _enrich_news_details(timeline, redis=self._redis),
             )
         else:
             await asyncio.gather(
-                _enrich_announcement_details(timeline),
+                _enrich_announcement_details(timeline, redis=self._redis),
                 _enrich_news_details(timeline, redis=self._redis),
             )
 
