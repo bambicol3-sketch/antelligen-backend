@@ -16,7 +16,7 @@ from app.infrastructure.scheduler.disclosure_jobs import (
 
 from app.infrastructure.scheduler.nasdaq_jobs import job_collect_nasdaq_bars
 from app.infrastructure.scheduler.macro_jobs import job_refresh_market_risk
-from app.infrastructure.scheduler.smart_money_jobs import job_collect_investor_flow, job_collect_global_portfolio
+from app.infrastructure.scheduler.smart_money_jobs import job_collect_investor_flow, job_collect_global_portfolio, job_collect_kr_portfolio
 from app.infrastructure.scheduler.macro_timeline_jobs import job_warmup_macro_timeline
 from app.infrastructure.scheduler.corp_earnings_jobs import job_refresh_corp_earnings
 
@@ -135,6 +135,16 @@ def create_disclosure_scheduler() -> AsyncIOScheduler:
         misfire_grace_time=3600,
     )
 
+    # Monthly — 국내 유명 투자자 DART 대량보유보고 수집 (매월 1일 03:00 KST)
+    scheduler.add_job(
+        job_collect_kr_portfolio,
+        trigger=CronTrigger(day=1, hour=3, minute=0, timezone=KST),
+        id="collect_kr_portfolio",
+        name="Collect KR investor DART major-holdings portfolio",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+
     # Quarterly 02:00 KST — 잠정실적 일정 재수집.
     # 기업들이 KRX 에 실제 공시 일정을 통보하는 시점(분기 종료 후 1~2주)에 맞춰
     # 1/2, 4/2, 7/2, 10/2 에 실행하여 새 일정을 upsert.
@@ -189,5 +199,5 @@ def create_disclosure_scheduler() -> AsyncIOScheduler:
         misfire_grace_time=3600,
     )
 
-    logger.info("Disclosure scheduler configured (9 jobs: 1 hourly, 5 daily, 3 seasonal)")
+    logger.info("Disclosure scheduler configured (10 jobs: 1 hourly, 5 daily, 1 monthly, 3 seasonal)")
     return scheduler

@@ -1,7 +1,18 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from datetime import date
 
 from app.domains.smart_money.domain.entity.global_portfolio import ChangeType, GlobalPortfolio
+
+
+@dataclass
+class USConcentratedStock:
+    ticker: str
+    stock_name: str | None
+    investor_count: int
+    total_market_value: int  # USD 천 달러
+    investors: list[str] = field(default_factory=list)
+    reported_at: date | None = None
 
 
 class GlobalPortfolioRepositoryPort(ABC):
@@ -34,4 +45,9 @@ class GlobalPortfolioRepositoryPort(ABC):
     @abstractmethod
     async def find_investor_names(self) -> list[str]:
         """수집된 투자자 이름 목록을 반환한다."""
+        pass
+
+    @abstractmethod
+    async def find_us_concentrated(self, limit: int = 20) -> list[USConcentratedStock]:
+        """유명 투자자들이 최신 분기에 동시 매수(NEW/INCREASED)한 미국 주식 집중 매수 랭킹을 반환한다."""
         pass

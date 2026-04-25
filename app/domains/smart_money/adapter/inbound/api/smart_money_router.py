@@ -14,6 +14,13 @@ from app.domains.smart_money.application.response.collect_investor_flow_response
 from app.domains.smart_money.application.response.investor_flow_ranking_response import InvestorFlowRankingResponse
 from app.domains.smart_money.application.response.global_portfolio_response import GlobalPortfolioResponse, InvestorListResponse
 from app.domains.smart_money.application.response.concentrated_buying_response import ConcentratedBuyingResponse
+from app.domains.smart_money.application.response.us_concentrated_buying_response import USConcentratedBuyingResponse
+from app.domains.smart_money.application.usecase.get_us_concentrated_buying_usecase import GetUSConcentratedBuyingUseCase
+from app.domains.smart_money.adapter.outbound.external.dart_client import DartClient
+from app.domains.smart_money.adapter.outbound.persistence.kr_portfolio_repository_impl import KrPortfolioRepositoryImpl
+from app.domains.smart_money.application.response.kr_portfolio_response import KrPortfolioResponse, KrInvestorListResponse, CollectKrPortfolioResponse
+from app.domains.smart_money.application.usecase.collect_kr_portfolio_usecase import CollectKrPortfolioUseCase, KR_INVESTOR_MAP
+from app.domains.smart_money.application.usecase.get_kr_portfolio_usecase import GetKrPortfolioUseCase
 from app.domains.smart_money.application.usecase.collect_global_portfolio_usecase import CollectGlobalPortfolioUseCase
 from app.domains.smart_money.application.usecase.collect_investor_flow_usecase import CollectInvestorFlowUseCase
 from app.domains.smart_money.application.usecase.get_investor_flow_ranking_usecase import GetInvestorFlowRankingUseCase
@@ -101,6 +108,71 @@ async def get_concentrated_buying(
     repository = InvestorFlowRepositoryImpl(db)
     usecase = GetConcentratedBuyingUseCase(repository=repository)
     result = await usecase.execute(days=days, limit=limit)
+    return BaseResponse.ok(data=result)
+
+
+@router.post("/kr-portfolio/collect", response_model=BaseResponse[CollectKrPortfolioResponse], status_code=201)
+async def collect_kr_portfolio(
+    db: AsyncSession = Depends(get_db),
+):
+    """DART OpenAPI에서 국내 유명 투자자(국민연금·자산운용사·개인) 5% 이상 보유 종목을 수집한다."""
+    settings = get_settings()
+    if not settings.open_dart_api_key:
+        from app.common.exception.app_exception import AppException
+        raise AppException(
+            status_code=400,
+            message=".env에 OPEN_DART_API_KEY가 설정되지 않았습니다. opendart.fss.or.kr에서 발급 후 설정해주세요.",
+        )
+    dart_client = DartClient(api_key=settings.open_dart_api_key)
+    repository = KrPortfolioRepositoryImpl(db)
+    usecase = CollectKrPortfolioUseCase(dart_client=dart_client, repository=repository)
+    result = await usecase.execute()
+    total = result.get("total_saved", 0)
+    error = result.get("error")
+    if error:
+        from app.common.exception.app_exception import AppException
+        raise AppException(status_code=500, message=f"수집 중 오류 발생: {error}")
+    return BaseResponse.ok(data=CollectKrPortfolioResponse(
+        total_saved=total,
+        message=f"국내 포트폴리오 수집 완료: {total}건",
+    ))
+
+
+@router.get("/kr-investors", response_model=BaseResponse[KrInvestorListResponse])
+async def get_kr_investor_list():
+    """수집 대상 국내 유명 투자자 목록을 반환한다."""
+    investors = [
+        {"name": name, "type": investor_type}
+        for name, investor_type in KR_INVESTOR_MAP.items()
+    ]
+    return BaseResponse.ok(data=KrInvestorListResponse(investors=investors))
+
+
+@router.get("/kr-portfolio", response_model=BaseResponse[KrPortfolioResponse])
+async def get_kr_portfolio(
+    investor_name: str | None = Query(default=None, description="투자자 이름 (생략 시 전체 건수만 반환)"),
+    db: AsyncSession = Depends(get_db),
+):
+    """국내 유명 투자자의 5% 이상 보유 종목 포트폴리오를 반환한다. investor_name 생략 시 total 건수만 반환."""
+    repository = KrPortfolioRepositoryImpl(db)
+    usecase = GetKrPortfolioUseCase(repository=repository)
+    if investor_name:
+        result = await usecase.execute(investor_name=investor_name)
+    else:
+        total = await usecase.get_total_count()
+        result = KrPortfolioResponse(investor_name=None, items=[], total=total)
+    return BaseResponse.ok(data=result)
+
+
+@router.get("/us-concentrated", response_model=BaseResponse[USConcentratedBuyingResponse])
+async def get_us_concentrated_buying(
+    limit: int = Query(default=20, ge=1, le=100, description="반환 종목 수 (기본: 20)"),
+    db: AsyncSession = Depends(get_db),
+):
+    """19명 글로벌 유명 투자자가 최신 분기에 동시 매수(신규편입·비중확대)한 미국 주식 집중 매수 랭킹을 반환한다."""
+    repository = GlobalPortfolioRepositoryImpl(db)
+    usecase = GetUSConcentratedBuyingUseCase(repository=repository)
+    result = await usecase.execute(limit=limit)
     return BaseResponse.ok(data=result)
 
 
