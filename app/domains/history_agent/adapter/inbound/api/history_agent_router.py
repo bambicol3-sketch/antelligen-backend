@@ -80,7 +80,7 @@ async def _resolve_corp_code(ticker: str, db: AsyncSession) -> Optional[str]:
 @router.get("/timeline", response_model=BaseResponse[TimelineResponse])
 async def get_timeline(
     ticker: str = Query(..., description="종목 코드 (예: AAPL, 005930)"),
-    chart_interval: str = Query("1Y", description="봉 단위: 1D | 1W | 1M | 1Q (1Y는 1Q로 자동 정규화)"),
+    chart_interval: str = Query("1Y", alias="chartInterval", description="봉 단위: 1D | 1W | 1M | 1Q (1Y는 1Q로 자동 정규화)"),
     enrich_titles: bool = Query(True, description="LLM 타이틀 생성 여부. False면 rule-based 타이틀만 반환"),
     db: AsyncSession = Depends(get_db),
     usecase: HistoryAgentUseCase = Depends(get_history_agent_usecase),
@@ -119,7 +119,7 @@ async def get_timeline(
 @router.get("/timeline/stream")
 async def stream_timeline(
     ticker: str = Query(..., description="종목 코드 (예: AAPL, 005930)"),
-    chart_interval: str = Query("1Y", description="봉 단위: 1D | 1W | 1M | 1Q (1Y는 1Q로 자동 정규화)"),
+    chart_interval: str = Query("1Y", alias="chartInterval", description="봉 단위: 1D | 1W | 1M | 1Q (1Y는 1Q로 자동 정규화)"),
     enrich_titles: bool = Query(True, description="LLM 타이틀 생성 여부. False면 rule-based 타이틀만 반환"),
     db: AsyncSession = Depends(get_db),
     usecase: HistoryAgentUseCase = Depends(get_history_agent_usecase),
@@ -400,7 +400,7 @@ async def stream_macro_timeline(
 @router.get("/anomaly-bars", response_model=BaseResponse[AnomalyBarsResponse])
 async def get_anomaly_bars(
     ticker: str = Query(..., description="종목 코드"),
-    chart_interval: str = Query("1D", description="봉 단위: 1D | 1W | 1M | 1Q (1Y는 1Q로 자동 정규화)"),
+    chart_interval: str = Query("1D", alias="chartInterval", description="봉 단위: 1D | 1W | 1M | 1Q (1Y는 1Q로 자동 정규화)"),
 ):
     """차트 이상치 봉(★ 마커 대상)을 반환합니다. §13.4 C 설계로 PRICE 카테고리를 대체.
 
@@ -427,7 +427,7 @@ async def get_anomaly_causality(
     ticker: str,
     bar_date: date,
     chart_interval: Optional[str] = Query(
-        None, description="봉 단위(1D/1W/1M/1Q). lookback 윈도우 multiplier 적용 + 캐시 키 분리 (§13.4 D)",
+        None, alias="chartInterval", description="봉 단위(1D/1W/1M/1Q). lookback 윈도우 multiplier 적용 + 캐시 키 분리 (§13.4 D)",
     ),
     usecase: GetAnomalyCausalityUseCase = Depends(get_anomaly_causality_usecase),
 ):

@@ -71,7 +71,7 @@ def _validate_chart_interval(chart_interval: str) -> str:
 
 @router.get("/nasdaq", response_model=BaseResponse[NasdaqBarsResponse])
 async def get_nasdaq_bars(
-    chart_interval: str = Query("1M", description="봉 단위: 1D | 1W | 1M | 1Y"),
+    chart_interval: str = Query("1M", alias="chartInterval", description="봉 단위: 1D | 1W | 1M | 1Y"),
     db: AsyncSession = Depends(get_db),
 ):
     """나스닥(^IXIC) OHLCV 일봉 데이터를 반환합니다."""
@@ -86,7 +86,7 @@ async def get_nasdaq_bars(
 
 @router.get("/macro", response_model=BaseResponse[MacroDataResponse])
 async def get_macro_data(
-    chart_interval: str = Query("1M", description="봉 단위: 1D | 1W | 1M | 1Y"),
+    chart_interval: str = Query("1M", alias="chartInterval", description="봉 단위: 1D | 1W | 1M | 1Y"),
 ):
     """거시경제 지표(기준금리·CPI·실업률)를 FRED API에서 실시간 조회합니다."""
     effective = _validate_chart_interval(chart_interval)
@@ -100,7 +100,7 @@ async def get_macro_data(
 
 @router.get("/economic-events", response_model=BaseResponse[EconomicEventsResponse])
 async def get_economic_events(
-    chart_interval: str = Query("1M", description="봉 단위: 1D | 1W | 1M | 1Y"),
+    chart_interval: str = Query("1M", alias="chartInterval", description="봉 단위: 1D | 1W | 1M | 1Y"),
 ):
     """경제 이벤트(기준금리·CPI·실업률 발표 이력)를 FRED API에서 실시간 조회합니다.
 
@@ -118,7 +118,7 @@ async def get_economic_events(
 @router.get("/stocks/{ticker}/bars", response_model=BaseResponse[StockBarsResponse])
 async def get_stock_bars(
     ticker: str,
-    chart_interval: str = Query("1D", description="봉 단위: 1D | 1W | 1M | 1Y"),
+    chart_interval: str = Query("1D", alias="chartInterval", description="봉 단위: 1D | 1W | 1M | 1Y"),
     redis: aioredis.Redis = Depends(get_redis),
 ):
     """개별 종목 OHLCV 시계열 데이터를 반환합니다. (yfinance + Redis 캐시)"""
@@ -140,7 +140,7 @@ async def get_stock_bars(
 @router.get("/stocks/{ticker}/corporate-events", response_model=BaseResponse[CorporateEventsResponse])
 async def get_corporate_events(
     ticker: str,
-    chart_interval: str = Query("1Y", description="봉 단위: 1D | 1W | 1M | 1Y"),
+    chart_interval: str = Query("1Y", alias="chartInterval", description="봉 단위: 1D | 1W | 1M | 1Y"),
     db: AsyncSession = Depends(get_db),
 ):
     """개별 종목의 기업 이벤트(실적·배당·유상증자·자사주·임원변동 등)를 반환합니다.
@@ -170,7 +170,7 @@ async def get_corporate_events(
 @router.get("/stocks/{ticker}/announcements", response_model=BaseResponse[AnnouncementsResponse])
 async def get_announcements(
     ticker: str,
-    chart_interval: str = Query("1Y", description="봉 단위: 1D | 1W | 1M | 1Y"),
+    chart_interval: str = Query("1Y", alias="chartInterval", description="봉 단위: 1D | 1W | 1M | 1Y"),
     db: AsyncSession = Depends(get_db),
 ):
     """합병/인수/계약 공시를 반환합니다.
