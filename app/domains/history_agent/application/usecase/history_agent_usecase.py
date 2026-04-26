@@ -46,6 +46,9 @@ from app.domains.history_agent.application.response.timeline_response import (
     TimelineEvent,
     TimelineResponse,
 )
+from app.domains.history_agent.application.service.event_classifier_service import (
+    EventClassifierService,
+)
 from app.domains.history_agent.application.service.event_importance_service import (
     EventImportanceService,
 )
@@ -68,8 +71,9 @@ from app.infrastructure.langgraph.llm_factory import get_workflow_llm
 logger = logging.getLogger(__name__)
 
 _CACHE_TTL = 3600
-# v5: CORPORATE/ANNOUNCEMENT importance_score 보강(EventImportanceService 도입)으로 스키마 변경 — v4 캐시 무효화.
-_CACHE_VERSION = "v5"
+# v6: KR A.1/A.2 — ANNOUNCEMENT type 재분류(v2 분류기) + importance_score_1to5(1~5 정수) + items_str
+# 스키마 변경. v5 캐시 무효화.
+_CACHE_VERSION = "v6"
 
 _SUPPORTED_ASSET_TYPES = {"EQUITY", "INDEX", "ETF"}
 
@@ -381,6 +385,7 @@ def _from_announcements(
             detail=e.title,
             source=e.source,
             url=e.url,
+            items_str=getattr(e, "items_str", None),
         )
         for e in result.events
     ]
@@ -599,6 +604,7 @@ class HistoryAgentUseCase:
         self._related_assets_port = related_assets_port
         self._gpr_index_port = gpr_index_port
         self._event_importance_service = EventImportanceService(enrichment_repo)
+        self._event_classifier_service = EventClassifierService(enrichment_repo)
 
     @staticmethod
     def _build_cache_key(asset_type: str, ticker: str, period: str, enrich_titles: bool) -> str:
@@ -743,18 +749,25 @@ class HistoryAgentUseCase:
 
         causality_task = _enrich_causality(ticker, timeline)
 
+        # v2 분류기는 score_v2 전에 실행 — 재분류된 type을 1~5 점수기 입력으로 사용.
+        async def _classify_then_score_v2() -> None:
+            await self._event_classifier_service.classify(ticker, timeline)
+            await self._event_importance_service.score_v2(ticker, timeline)
+
         if enrich_titles:
             await asyncio.gather(
                 causality_task,
                 enrich_other_titles(timeline),
                 _enrich_announcement_details(timeline, redis=self._redis),
                 self._event_importance_service.score(ticker, timeline),
+                _classify_then_score_v2(),
             )
         else:
             await asyncio.gather(
                 causality_task,
                 _enrich_announcement_details(timeline, redis=self._redis),
                 self._event_importance_service.score(ticker, timeline),
+                _classify_then_score_v2(),
             )
 
         # 4) 신규 이벤트만 DB 저장
@@ -900,17 +913,24 @@ class HistoryAgentUseCase:
         )
 
         await _notify("title_gen", "AI 타이틀 생성 중...", 70)
+
+        async def _etf_classify_then_score_v2() -> None:
+            await self._event_classifier_service.classify(ticker, timeline)
+            await self._event_importance_service.score_v2(ticker, timeline)
+
         if enrich_titles:
             await asyncio.gather(
                 enrich_macro_titles(timeline, redis=self._redis),
                 enrich_other_titles(timeline),
                 _enrich_announcement_details(timeline, redis=self._redis),
                 self._event_importance_service.score(ticker, timeline),
+                _etf_classify_then_score_v2(),
             )
         else:
             await asyncio.gather(
                 _enrich_announcement_details(timeline, redis=self._redis),
                 self._event_importance_service.score(ticker, timeline),
+                _etf_classify_then_score_v2(),
             )
 
         await self._save_enrichments(ticker, new_events)
@@ -1067,20 +1087,20 @@ class HistoryAgentUseCase:
     async def _load_enrichments(
         self, ticker: str, timeline: List[TimelineEvent]
     ) -> Dict[Tuple, "EventEnrichment"]:
+        # title/causality는 v1 행에서만 로드(v2 행은 reclassified_type 캐시 용도).
         keys = [
             (
                 ticker,
                 e.date,
                 e.type,
                 compute_detail_hash(e.detail, e.constituent_ticker),
+                "v1",
             )
             for e in timeline
         ]
         try:
             enrichments = await self._enrichment_repo.find_by_keys(keys)
         except Exception as exc:  # noqa: BLE001
-            # DB 스키마 미일치/트랜잭션 abort 상태에서 빈 캐시로 계속 진행하도록 한다.
-            # 없으면 _apply_enrichments가 모든 이벤트를 '신규'로 간주해 LLM 단계만 실행된다.
             logger.error(
                 "[HistoryAgent] _load_enrichments 실패 — 빈 캐시로 진행: "
                 "ticker=%s keys=%d error_type=%s error=%s",
@@ -1088,7 +1108,10 @@ class HistoryAgentUseCase:
             )
             await self._enrichment_repo.rollback()
             return {}
-        return {(e.ticker, e.event_date, e.event_type, e.detail_hash): e for e in enrichments}
+        return {
+            (e.ticker, e.event_date, e.event_type, e.detail_hash): e
+            for e in enrichments
+        }
 
     def _apply_enrichments(
         self,
@@ -1127,6 +1150,8 @@ class HistoryAgentUseCase:
                     [h.model_dump() for h in e.causality] if e.causality else None
                 ),
                 importance_score=e.importance_score,
+                items_str=e.items_str,
+                classifier_version="v1",
             )
             for e in events
         ]

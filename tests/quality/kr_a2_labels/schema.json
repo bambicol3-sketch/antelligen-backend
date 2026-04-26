@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "KR A.2 사용자 라벨 데이터 스키마",
+  "description": "각 ticker의 공시(ANNOUNCEMENT) 30~50건에 대해 사용자가 직접 type 분류와 1~5점 중요도를 라벨링한 결과. tests/quality/validate_kr_a2.py가 이 데이터로 LLM v2 결과와 비교한다.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["date", "type", "detail_hash", "human_importance_1to5"],
+    "properties": {
+      "date": {
+        "type": "string",
+        "format": "date",
+        "description": "공시 일자 (YYYY-MM-DD)"
+      },
+      "type": {
+        "type": "string",
+        "enum": [
+          "MERGER_ACQUISITION",
+          "CONTRACT",
+          "MANAGEMENT_CHANGE",
+          "ACCOUNTING_ISSUE",
+          "REGULATORY",
+          "PRODUCT_LAUNCH",
+          "CRISIS",
+          "EARNINGS_RELEASE",
+          "DEBT_ISSUANCE",
+          "SHAREHOLDER_MEETING",
+          "REGULATION_FD",
+          "MAJOR_EVENT"
+        ],
+        "description": "사용자가 판단한 공시 분류 (12개 후보)"
+      },
+      "detail_hash": {
+        "type": "string",
+        "description": "event_enrichments.detail_hash와 매칭. SHA256(detail)[:16]. DB 조회로 확인 후 입력.",
+        "minLength": 16,
+        "maxLength": 16
+      },
+      "detail_excerpt": {
+        "type": "string",
+        "description": "(선택) detail 본문 앞 200자 발췌 — 라벨링 시 참고용",
+        "maxLength": 500
+      },
+      "human_importance_1to5": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 5,
+        "description": "사용자가 매긴 1~5점 중요도. 5=회사 존립급, 4=주요 인수합병, 3=의미있는 사건, 2=일반 공시, 1=정형화된 일상"
+      },
+      "confidence": {
+        "type": "number",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "description": "(선택) 라벨에 대한 사용자 확신도. 낮으면 검증에서 가중치 ↓"
+      },
+      "reasoning": {
+        "type": "string",
+        "description": "(선택) 왜 이 type/점수로 판단했는지 메모"
+      }
+    }
+  },
+  "examples": [
+    {
+      "date": "2024-03-15",
+      "type": "MERGER_ACQUISITION",
+      "detail_hash": "abc123def456a7b8",
+      "detail_excerpt": "Company X acquires division Y for $500M",
+      "human_importance_1to5": 4,
+      "confidence": 0.9,
+      "reasoning": "중간 규모 빅딜, 매출 영향 있지만 회사 존립급은 아님"
+    }
+  ]
+}

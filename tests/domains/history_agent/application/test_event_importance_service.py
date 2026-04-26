@@ -197,3 +197,93 @@ async def test_skip_types_are_subset_of_base_scores():
     """LLM skip type은 반드시 base score 테이블에 있어야 한다."""
     for skip_type in _LLM_SKIP_TYPES:
         assert skip_type in _TYPE_BASE_SCORE, f"{skip_type} missing from _TYPE_BASE_SCORE"
+
+
+# ── score_v2 (1~5 정수 점수기, KR A.2) ────────────────────────────────
+
+async def test_score_v2_assigns_1to5_with_llm():
+    events = [
+        _event(0, event_type="MERGER_ACQUISITION"),
+        _event(1, event_type="REGULATORY"),
+        _event(2, event_type="CRISIS"),
+    ]
+    repo = MagicMock()
+    repo.find_by_keys = AsyncMock(return_value=[])
+    repo.upsert_bulk = AsyncMock(return_value=3)
+
+    fake_llm = _FakeLLM([4, 3, 5])  # 1~5 정수
+
+    with patch(
+        "app.domains.history_agent.application.service.event_importance_service.get_workflow_llm",
+        return_value=fake_llm,
+    ):
+        service = EventImportanceService(enrichment_repo=repo)
+        await service.score_v2("AAPL", events)
+
+    assert [e.importance_score_1to5 for e in events] == [4, 3, 5]
+    assert all(e.classifier_version == "v2" for e in events)
+    saved = repo.upsert_bulk.call_args.args[0]
+    assert all(row.classifier_version == "v2" for row in saved)
+    assert [row.importance_score_1to5 for row in saved] == [4, 3, 5]
+
+
+async def test_score_v2_skips_for_disclosure_and_meeting_types():
+    """v2 LLM_SKIP_TYPES에 있는 type은 base 1~5만 즉시 할당."""
+    from app.domains.history_agent.application.service.event_importance_service import (
+        _TYPE_BASE_SCORE_1to5,
+    )
+    events = [
+        _event(0, category="CORPORATE", event_type="DISCLOSURE"),
+        _event(1, event_type="SHAREHOLDER_MEETING"),
+        _event(2, event_type="REGULATION_FD"),
+        _event(3, event_type="MERGER_ACQUISITION"),  # 이건 LLM 호출
+    ]
+    repo = MagicMock()
+    repo.find_by_keys = AsyncMock(return_value=[])
+    repo.upsert_bulk = AsyncMock(return_value=4)
+
+    fake_llm = _FakeLLM([4])
+
+    with patch(
+        "app.domains.history_agent.application.service.event_importance_service.get_workflow_llm",
+        return_value=fake_llm,
+    ):
+        service = EventImportanceService(enrichment_repo=repo)
+        await service.score_v2("AAPL", events)
+
+    assert events[0].importance_score_1to5 == _TYPE_BASE_SCORE_1to5["DISCLOSURE"]
+    assert events[1].importance_score_1to5 == _TYPE_BASE_SCORE_1to5["SHAREHOLDER_MEETING"]
+    assert events[2].importance_score_1to5 == _TYPE_BASE_SCORE_1to5["REGULATION_FD"]
+    assert events[3].importance_score_1to5 == 4
+    assert fake_llm.calls == 1
+
+
+async def test_score_v2_uses_v2_cache():
+    """v2 캐시 hit 시 LLM 미호출."""
+    events = [_event(0, event_type="EARNINGS_RELEASE")]
+    cached = [
+        EventEnrichment(
+            ticker="AAPL",
+            event_date=events[0].date,
+            event_type=events[0].type,
+            detail_hash=compute_detail_hash(events[0].detail),
+            title=events[0].title,
+            importance_score_1to5=3,
+            classifier_version="v2",
+        )
+    ]
+    repo = MagicMock()
+    repo.find_by_keys = AsyncMock(return_value=cached)
+
+    fake_llm = _FakeLLM([1])  # 호출되지 않아야 함
+
+    with patch(
+        "app.domains.history_agent.application.service.event_importance_service.get_workflow_llm",
+        return_value=fake_llm,
+    ):
+        service = EventImportanceService(enrichment_repo=repo)
+        await service.score_v2("AAPL", events)
+
+    assert events[0].importance_score_1to5 == 3
+    assert events[0].classifier_version == "v2"
+    assert fake_llm.calls == 0

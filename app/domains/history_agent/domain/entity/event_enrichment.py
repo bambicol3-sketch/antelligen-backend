@@ -22,6 +22,10 @@ class EventEnrichment:
     title: str
     causality: Optional[List[Dict[str, Any]]] = field(default=None)
     importance_score: Optional[float] = field(default=None)
+    importance_score_1to5: Optional[int] = field(default=None)
+    items_str: Optional[str] = field(default=None)
+    reclassified_type: Optional[str] = field(default=None)
+    classifier_version: str = field(default="v1")
     id: Optional[int] = field(default=None)
     created_at: Optional[datetime] = field(default=None)
     updated_at: Optional[datetime] = field(default=None)

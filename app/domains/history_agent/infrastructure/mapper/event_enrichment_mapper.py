@@ -15,6 +15,10 @@ class EventEnrichmentMapper:
             title=orm.title,
             causality=orm.causality,
             importance_score=orm.importance_score,
+            importance_score_1to5=orm.importance_score_1to5,
+            items_str=orm.items_str,
+            reclassified_type=orm.reclassified_type,
+            classifier_version=orm.classifier_version,
             created_at=orm.created_at,
             updated_at=orm.updated_at,
         )
@@ -29,4 +33,8 @@ class EventEnrichmentMapper:
             title=entity.title,
             causality=entity.causality,
             importance_score=entity.importance_score,
+            importance_score_1to5=entity.importance_score_1to5,
+            items_str=entity.items_str,
+            reclassified_type=entity.reclassified_type,
+            classifier_version=entity.classifier_version,
         )

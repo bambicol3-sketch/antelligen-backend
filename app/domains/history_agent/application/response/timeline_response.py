@@ -26,6 +26,12 @@ class TimelineEvent(BaseModel):
     sentiment: Optional[float] = None
     # 매크로 이벤트 역사적 중요도(0..1). MACRO·MACRO_CONTEXT 이외엔 None.
     importance_score: Optional[float] = None
+    # 공시 분류 v2 — 1~5 정수 척도. CORPORATE/ANNOUNCEMENT만 채워짐 (PR1).
+    importance_score_1to5: Optional[int] = None
+    # 어느 분류기 버전이 type/score를 결정했는지("v1"=규칙 베이스, "v2"=LLM 재분류).
+    classifier_version: Optional[str] = None
+    # SEC 8-K raw Item 코드(예: "1.01,9.01"). KR A.1 빈도 분석 / classifier 입력에 사용.
+    items_str: Optional[str] = None
 
 
 class TimelineResponse(BaseModel):
