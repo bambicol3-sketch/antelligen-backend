@@ -129,6 +129,30 @@ def is_fallback_title(event: TimelineEvent) -> bool:
     return event.title == FALLBACK_TITLE.get(event.type, event.type)
 
 
+def is_pseudo_announcement_title(event: TimelineEvent) -> bool:
+    """`_announcement_title()`이 만든 ticker prefix 임시 타이틀인지 판정.
+
+    `_from_announcements`는 ANNOUNCEMENT 이벤트에 "{ticker} 8-K" / "{ticker} 주요 공시"
+    / "{ticker} {fallback_label}" 같은 임시 타이틀을 붙인다. 이 패턴은 `is_fallback_title`
+    이 잡지 못해 LLM 재생성 대상에서 누락되는 문제가 있다. 이 헬퍼는 그 누락을 보정한다.
+
+    DB 캐시에서 로드된 LLM 자연어 타이틀(보통 12자 이내 한국어)은 이 패턴과 겹치지 않는다.
+    """
+    if event.category != "ANNOUNCEMENT":
+        return False
+    title = event.title or ""
+    if not title:
+        return True
+    # source-기반 prefix 패턴
+    if title.endswith(" 8-K") or title.endswith(" 주요 공시"):
+        return True
+    # 일반 fallback 패턴: "{ticker} {fallback_label}"
+    fallback = FALLBACK_TITLE.get(event.type)
+    if fallback and title.endswith(f" {fallback}"):
+        return True
+    return False
+
+
 def hypothesis_summary(event: TimelineEvent) -> str:
     """인과 가설이 있으면 첫 번째 가설의 핵심 원인 부분을 반환한다."""
     if not event.causality:
@@ -289,10 +313,16 @@ async def batch_titles(
 
 
 async def enrich_other_titles(timeline: List[TimelineEvent]) -> None:
-    """CORPORATE / ANNOUNCEMENT 이벤트 타이틀을 생성한다."""
+    """CORPORATE / ANNOUNCEMENT 이벤트 타이틀을 생성한다.
+
+    ANNOUNCEMENT는 `_announcement_title()`이 ticker prefix 임시 타이틀을 붙이므로
+    `is_fallback_title`만으로는 누락된다. `is_pseudo_announcement_title`로 보정해
+    DB 캐시에서 로드된 자연어 타이틀이 아닌 모든 공시를 LLM 처리 대상에 포함한다.
+    """
     other_events = [
         e for e in timeline
-        if e.category in {"CORPORATE", "ANNOUNCEMENT"} and is_fallback_title(e)
+        if e.category in {"CORPORATE", "ANNOUNCEMENT"}
+        and (is_fallback_title(e) or is_pseudo_announcement_title(e))
     ]
     if not other_events:
         return
