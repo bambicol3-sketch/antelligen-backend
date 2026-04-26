@@ -69,6 +69,11 @@ _TYPE_BASE_SCORE: Dict[str, float] = {
     "PRODUCT_LAUNCH": 0.45,
     "MAJOR_EVENT": 0.40,
     "CONTRACT": 0.35,
+    # ANNOUNCEMENT v2 (분류기로 분리된 정기 IR 공시들)
+    "EARNINGS_RELEASE": 0.45,
+    "DEBT_ISSUANCE": 0.35,
+    "SHAREHOLDER_MEETING": 0.25,
+    "REGULATION_FD": 0.30,
     # CORPORATE
     "RIGHTS_OFFERING": 0.55,
     "BUYBACK_CANCEL": 0.50,
@@ -78,7 +83,41 @@ _TYPE_BASE_SCORE: Dict[str, float] = {
 }
 
 # 분포가 좁아 LLM 호출 가치가 낮은 type. base만으로 점수 결정.
-_LLM_SKIP_TYPES = {"DISCLOSURE", "STOCK_SPLIT", "MAJOR_EVENT"}
+_LLM_SKIP_TYPES = {
+    "DISCLOSURE", "STOCK_SPLIT", "MAJOR_EVENT",
+    "SHAREHOLDER_MEETING", "REGULATION_FD",  # v2: 정기·일상 공시
+}
+
+# 1~5 정수 척도 (KR A.2). v2 점수기 출력값.
+# 5: 회사 존립/메가딜 / 4: 주요 인수합병·회계이슈 / 3: CEO교체·의미있는 계약 / 2: 일반 공시 / 1: 정형화된 일상
+_TYPE_BASE_SCORE_1to5: Dict[str, int] = {
+    # ANNOUNCEMENT
+    "CRISIS": 5,
+    "ACCOUNTING_ISSUE": 5,
+    "MERGER_ACQUISITION": 4,
+    "REGULATORY": 3,
+    "MANAGEMENT_CHANGE": 3,
+    "PRODUCT_LAUNCH": 3,
+    "EARNINGS_RELEASE": 3,
+    "MAJOR_EVENT": 2,
+    "CONTRACT": 2,
+    "DEBT_ISSUANCE": 2,
+    "REGULATION_FD": 1,
+    "SHAREHOLDER_MEETING": 1,
+    # CORPORATE
+    "RIGHTS_OFFERING": 3,
+    "BUYBACK_CANCEL": 3,
+    "BUYBACK": 2,
+    "STOCK_SPLIT": 1,
+    "DISCLOSURE": 1,
+}
+
+# v2 1~5 척도에서도 분포 좁은 type은 LLM skip.
+_LLM_SKIP_TYPES_V2 = {
+    "DISCLOSURE", "STOCK_SPLIT", "SHAREHOLDER_MEETING", "REGULATION_FD",
+}
+
+_FALLBACK_SCORE_1to5 = 2  # 1~5 fallback (중하)
 
 _FALLBACK_SCORE = 0.3
 _BATCH_SIZE = 20
@@ -147,17 +186,92 @@ async def _score_batch(
 
 
 def _build_cache_key(
-    ticker: str, event: TimelineEvent
-) -> Tuple[str, Any, str, str]:
+    ticker: str, event: TimelineEvent, version: str = "v1"
+) -> Tuple[str, Any, str, str, str]:
+    """5-tuple 캐시 키. v1/v2 행 분리 보유."""
     return (
         ticker,
         event.date,
         event.type,
         compute_detail_hash(event.detail),
+        version,
     )
 
 
 _SCOREABLE_CATEGORIES = {"CORPORATE", "ANNOUNCEMENT"}
+
+
+def _base_score_1to5(event_type: str) -> int:
+    return _TYPE_BASE_SCORE_1to5.get(event_type, _FALLBACK_SCORE_1to5)
+
+
+EVENT_IMPORTANCE_V2_SYSTEM = """\
+당신은 주식 분석가입니다.
+각 공시가 '해당 종목의 단기 주가에 미치는 영향도'를 1~5 정수로 점수화하십시오.
+
+척도:
+- 5: 회사 존립 위기 / 메가딜 (대규모 M&A, 회계 부정 적발, 파산 신청)
+- 4: 주요 인수합병, 회계 이슈 발생, 신용등급 강등급 규제 제재
+- 3: CEO·CFO 교체, 의미 있는 신제품/계약 발표, 분기 실적, 중대 소송
+- 2: 일반 공시, 자사주 매입/소각, 분할/증자, 회사채 발행
+- 1: 정형화된 일상 공시 (Reg FD 가이던스, 정기 주총 결과 등)
+
+판단 시:
+- type은 사건 유형의 강한 신호다. 그 위에 detail 본문에서 '규모/금액/심각도'를 보정한다.
+- 같은 MERGER_ACQUISITION이라도 100억 자회사 흡수합병과 50조 빅딜은 다르다.
+- detail에 '소액/단순/일상' 단서가 있으면 base보다 낮게, '대규모/긴급/주요' 단서가 있으면 높게.
+
+규칙:
+- JSON 배열로만 응답: [3, 2, 5, ...]
+- 이벤트 순서와 배열 순서를 반드시 일치시킨다
+- 각 값은 1~5 정수만. 추가 설명 금지.
+"""
+
+
+def _build_line_v2(idx: int, event: TimelineEvent) -> str:
+    base = _base_score_1to5(event.type)
+    return (
+        f"{idx + 1}. type={event.type} base={base} "
+        f"date={event.date.isoformat()} detail={event.detail[:200]}"
+    )
+
+
+def _parse_scores_v2(content: str, expected: int) -> List[int]:
+    parsed = json.loads(content)
+    if not isinstance(parsed, list):
+        raise json.JSONDecodeError("expected list", content, 0)
+    if len(parsed) != expected:
+        raise json.JSONDecodeError(
+            f"expected {expected} items, got {len(parsed)}", content, 0,
+        )
+    return [max(1, min(5, int(v))) for v in parsed]
+
+
+async def _score_batch_v2(
+    llm: Any, batch: List[TimelineEvent], sem: asyncio.Semaphore
+) -> List[int]:
+    lines = "\n".join(_build_line_v2(i, e) for i, e in enumerate(batch))
+    async with sem:
+        try:
+            content = await _invoke_llm(llm, EVENT_IMPORTANCE_V2_SYSTEM, lines)
+            return _parse_scores_v2(content, len(batch))
+        except json.JSONDecodeError as exc:
+            logger.warning("[EventImportanceV2] JSON 파싱 실패, 재시도: %s", exc)
+            try:
+                content = await _invoke_llm(
+                    llm, EVENT_IMPORTANCE_V2_SYSTEM + _JSON_RETRY_SUFFIX, lines,
+                )
+                return _parse_scores_v2(content, len(batch))
+            except Exception as retry_exc:
+                logger.warning(
+                    "[EventImportanceV2] 재시도 실패 → type base 1~5 할당: %s", retry_exc,
+                )
+                return [_base_score_1to5(e.type) for e in batch]
+        except Exception as exc:
+            logger.warning(
+                "[EventImportanceV2] 점수화 실패 → type base 1~5 할당: %s", exc,
+            )
+            return [_base_score_1to5(e.type) for e in batch]
 
 
 class EventImportanceService:
@@ -198,13 +312,14 @@ class EventImportanceService:
             )
             raise
         cache_map: Dict[Tuple, EventEnrichment] = {
-            (r.ticker, r.event_date, r.event_type, r.detail_hash): r for r in cached
+            (r.ticker, r.event_date, r.event_type, r.detail_hash, r.classifier_version): r
+            for r in cached
         }
 
         # 1) 캐시 적중 / LLM skip type 즉시 처리
         miss_events: List[TimelineEvent] = []
         miss_indices: List[int] = []
-        miss_keys: List[Tuple[str, Any, str, str]] = []
+        miss_keys: List[Tuple[str, Any, str, str, str]] = []
         new_rows: List[EventEnrichment] = []
         cache_hit = 0
         skip_count = 0
@@ -221,7 +336,7 @@ class EventImportanceService:
                 score = _base_score(event.type)
                 event.importance_score = score
                 skip_count += 1
-                ticker_k, event_date, event_type, detail_hash = key
+                ticker_k, event_date, event_type, detail_hash, version = key
                 new_rows.append(
                     EventEnrichment(
                         ticker=ticker_k,
@@ -230,6 +345,8 @@ class EventImportanceService:
                         detail_hash=detail_hash,
                         title=event.title or event.type,
                         importance_score=score,
+                        items_str=event.items_str,
+                        classifier_version=version,
                     )
                 )
                 continue
@@ -254,7 +371,7 @@ class EventImportanceService:
             for idx_in_miss, score in enumerate(flat_scores):
                 event = miss_events[idx_in_miss]
                 event.importance_score = score
-                ticker_k, event_date, event_type, detail_hash = miss_keys[idx_in_miss]
+                ticker_k, event_date, event_type, detail_hash, version = miss_keys[idx_in_miss]
                 new_rows.append(
                     EventEnrichment(
                         ticker=ticker_k,
@@ -263,6 +380,8 @@ class EventImportanceService:
                         detail_hash=detail_hash,
                         title=event.title or event.type,
                         importance_score=score,
+                        items_str=event.items_str,
+                        classifier_version=version,
                     )
                 )
             llm_calls = len(miss_events)
@@ -282,6 +401,134 @@ class EventImportanceService:
             ticker, cache_hit, skip_count, llm_calls, len(targets), elapsed_ms,
             extra={
                 "llm_op": "event_importance",
+                "ticker": ticker,
+                "cache_hit": cache_hit,
+                "skip_count": skip_count,
+                "llm_calls": llm_calls,
+                "total": len(targets),
+                "elapsed_ms": elapsed_ms,
+            },
+        )
+
+    async def score_v2(self, ticker: str, events: List[TimelineEvent]) -> None:
+        """v2 1~5 정수 점수기 (KR A.2). importance_score_1to5 필드를 in-place로 채운다.
+
+        - EventClassifierService가 먼저 type을 재할당한 후 이 메서드를 호출해야 한다.
+        - DB 캐시 적중분은 LLM 호출 없이 재사용 (classifier_version='v2' 행).
+        - _LLM_SKIP_TYPES_V2에 속한 type은 base 1~5만 즉시 할당.
+        - 실패 시 type별 base_score_1to5로 fallback.
+        """
+        if not events:
+            return
+
+        targets = [
+            e for e in events
+            if e.category in _SCOREABLE_CATEGORIES and e.importance_score_1to5 is None
+        ]
+        if not targets:
+            return
+
+        start = time.monotonic()
+        keys = [_build_cache_key(ticker, e, version="v2") for e in targets]
+        logger.info(
+            "[EventImportanceV2] 시작: ticker=%s targets=%d", ticker, len(targets),
+        )
+
+        try:
+            cached = await self._repo.find_by_keys(keys)
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "[EventImportanceV2] find_by_keys 실패: %s", exc,
+            )
+            raise
+        cache_map: Dict[Tuple, EventEnrichment] = {
+            (r.ticker, r.event_date, r.event_type, r.detail_hash, r.classifier_version): r
+            for r in cached
+        }
+
+        miss_events: List[TimelineEvent] = []
+        miss_keys: List[Tuple[str, Any, str, str, str]] = []
+        new_rows: List[EventEnrichment] = []
+        cache_hit = 0
+        skip_count = 0
+
+        for idx, event in enumerate(targets):
+            key = keys[idx]
+            hit = cache_map.get(key)
+            if hit and hit.importance_score_1to5 is not None:
+                event.importance_score_1to5 = hit.importance_score_1to5
+                event.classifier_version = "v2"
+                cache_hit += 1
+                continue
+
+            if event.type in _LLM_SKIP_TYPES_V2:
+                score_1to5 = _base_score_1to5(event.type)
+                event.importance_score_1to5 = score_1to5
+                event.classifier_version = "v2"
+                skip_count += 1
+                ticker_k, event_date, event_type, detail_hash, version = key
+                new_rows.append(
+                    EventEnrichment(
+                        ticker=ticker_k,
+                        event_date=event_date,
+                        event_type=event_type,
+                        detail_hash=detail_hash,
+                        title=event.title or event.type,
+                        importance_score_1to5=score_1to5,
+                        items_str=event.items_str,
+                        classifier_version=version,
+                    )
+                )
+                continue
+
+            miss_events.append(event)
+            miss_keys.append(key)
+
+        if miss_events:
+            llm = get_workflow_llm(model=TITLE_MODEL)
+            sem = asyncio.Semaphore(_CONCURRENCY)
+            tasks = [
+                _score_batch_v2(llm, miss_events[i: i + _BATCH_SIZE], sem)
+                for i in range(0, len(miss_events), _BATCH_SIZE)
+            ]
+            batch_results = await asyncio.gather(*tasks)
+            flat_scores: List[int] = []
+            for batch in batch_results:
+                flat_scores.extend(batch)
+
+            for idx_in_miss, score_1to5 in enumerate(flat_scores):
+                event = miss_events[idx_in_miss]
+                event.importance_score_1to5 = score_1to5
+                event.classifier_version = "v2"
+                ticker_k, event_date, event_type, detail_hash, version = miss_keys[idx_in_miss]
+                new_rows.append(
+                    EventEnrichment(
+                        ticker=ticker_k,
+                        event_date=event_date,
+                        event_type=event_type,
+                        detail_hash=detail_hash,
+                        title=event.title or event.type,
+                        importance_score_1to5=score_1to5,
+                        items_str=event.items_str,
+                        classifier_version=version,
+                    )
+                )
+            llm_calls = len(miss_events)
+        else:
+            llm_calls = 0
+
+        if new_rows:
+            try:
+                await self._repo.upsert_bulk(new_rows)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[EventImportanceV2] 점수 저장 실패 (무시): %s", exc)
+
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+        logger.info(
+            "[EventImportanceV2] 완료: ticker=%s cache_hit=%d skip=%d llm=%d total=%d elapsed=%dms",
+            ticker, cache_hit, skip_count, llm_calls, len(targets), elapsed_ms,
+            extra={
+                "llm_op": "event_importance_v2",
                 "ticker": ticker,
                 "cache_hit": cache_hit,
                 "skip_count": skip_count,

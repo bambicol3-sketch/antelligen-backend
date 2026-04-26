@@ -1,5 +1,5 @@
 from datetime import date
-from typing import List
+from typing import List, Optional
 
 from pydantic import BaseModel
 
@@ -12,6 +12,7 @@ class AnnouncementEventResponse(BaseModel):
     title: str
     source: str
     url: str
+    items_str: Optional[str] = None  # SEC 8-K raw Item 코드. DART는 None.
 
     @classmethod
     def from_entity(cls, event: AnnouncementEvent) -> "AnnouncementEventResponse":
@@ -21,6 +22,7 @@ class AnnouncementEventResponse(BaseModel):
             title=event.title,
             source=event.source,
             url=event.url,
+            items_str=event.items_str,
         )
 
 

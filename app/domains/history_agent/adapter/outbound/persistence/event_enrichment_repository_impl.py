@@ -1,11 +1,12 @@
 from datetime import date
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 from sqlalchemy import select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.history_agent.application.port.out.event_enrichment_repository_port import (
+    EnrichmentKey,
     EventEnrichmentRepositoryPort,
 )
 from app.domains.history_agent.domain.entity.event_enrichment import EventEnrichment
@@ -15,16 +16,26 @@ from app.domains.history_agent.infrastructure.mapper.event_enrichment_mapper imp
 from app.domains.history_agent.infrastructure.orm.event_enrichment_orm import EventEnrichmentOrm
 
 
+def _normalize_key(key: EnrichmentKey) -> Tuple[str, date, str, str, str]:
+    """4-tuple은 classifier_version='v1' 암시. 5-tuple은 그대로."""
+    if len(key) == 4:
+        ticker, event_date, event_type, detail_hash = key
+        return (ticker, event_date, event_type, detail_hash, "v1")
+    return key  # type: ignore[return-value]
+
+
 class EventEnrichmentRepositoryImpl(EventEnrichmentRepositoryPort):
 
     def __init__(self, db: AsyncSession):
         self._db = db
 
     async def find_by_keys(
-        self, keys: List[Tuple[str, date, str, str]]
+        self, keys: List[EnrichmentKey]
     ) -> List[EventEnrichment]:
         if not keys:
             return []
+
+        normalized = [_normalize_key(k) for k in keys]
 
         stmt = select(EventEnrichmentOrm).where(
             tuple_(
@@ -32,7 +43,8 @@ class EventEnrichmentRepositoryImpl(EventEnrichmentRepositoryPort):
                 EventEnrichmentOrm.event_date,
                 EventEnrichmentOrm.event_type,
                 EventEnrichmentOrm.detail_hash,
-            ).in_(keys)
+                EventEnrichmentOrm.classifier_version,
+            ).in_(normalized)
         )
         result = await self._db.execute(stmt)
         return [EventEnrichmentMapper.to_entity(orm) for orm in result.scalars().all()]
@@ -50,6 +62,10 @@ class EventEnrichmentRepositoryImpl(EventEnrichmentRepositoryPort):
                 "title": e.title,
                 "causality": e.causality,
                 "importance_score": e.importance_score,
+                "importance_score_1to5": e.importance_score_1to5,
+                "items_str": e.items_str,
+                "reclassified_type": e.reclassified_type,
+                "classifier_version": e.classifier_version,
             }
             for e in enrichments
         ]
@@ -64,6 +80,9 @@ class EventEnrichmentRepositoryImpl(EventEnrichmentRepositoryPort):
                     "title": excluded.title,
                     "causality": excluded.causality,
                     "importance_score": excluded.importance_score,
+                    "importance_score_1to5": excluded.importance_score_1to5,
+                    "items_str": excluded.items_str,
+                    "reclassified_type": excluded.reclassified_type,
                     "updated_at": excluded.updated_at,
                 },
             )
@@ -79,5 +98,4 @@ class EventEnrichmentRepositoryImpl(EventEnrichmentRepositoryPort):
         try:
             await self._db.rollback()
         except Exception:  # noqa: BLE001
-            # 세션이 이미 닫혔거나 connection 수준 이슈는 호출부가 새 세션을 받을 때 복구된다.
             pass

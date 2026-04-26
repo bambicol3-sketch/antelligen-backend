@@ -31,15 +31,22 @@ _ITEM_PATTERN = re.compile(r"(?i)\bitem\s+(\d+\.\d+)\b")
 _EXHIBIT_ITEMS = {"9.01", "9.02"}
 
 # 8-K 아이템 코드 → 공시 타입. 사용자 분류 기준(시점 명확 사건) 으로 5.02/4.02/3.01 세분화.
+# v2: 정기 IR 공시(2.02 실적, 5.07 주총, 7.01 Reg FD)와 자본 조달(1.01+notes 형태)을 별도 type으로.
 _ITEM_TYPE_MAP: list[tuple[str, AnnouncementEventType]] = [
-    ("2.01", AnnouncementEventType.MERGER_ACQUISITION),  # Completion of Acquisition or Disposition
-    ("1.01", AnnouncementEventType.CONTRACT),            # Material Definitive Agreement
-    ("1.02", AnnouncementEventType.CONTRACT),            # Termination of Material Agreement
-    ("5.02", AnnouncementEventType.MANAGEMENT_CHANGE),   # Departure/Election of Directors/Officers
-    ("4.02", AnnouncementEventType.ACCOUNTING_ISSUE),    # Non-Reliance on Previous Financials
-    ("3.01", AnnouncementEventType.CRISIS),              # Notice of Delisting / Failure to Satisfy Listing Rule
-    ("8.01", AnnouncementEventType.MAJOR_EVENT),         # Other Events (fallback)
+    ("2.01", AnnouncementEventType.MERGER_ACQUISITION),    # Completion of Acquisition or Disposition
+    ("2.02", AnnouncementEventType.EARNINGS_RELEASE),      # Results of Operations (분기/연간 실적)
+    ("1.01", AnnouncementEventType.CONTRACT),              # Material Definitive Agreement
+    ("1.02", AnnouncementEventType.CONTRACT),              # Termination of Material Agreement
+    ("5.02", AnnouncementEventType.MANAGEMENT_CHANGE),     # Departure/Election of Directors/Officers
+    ("5.07", AnnouncementEventType.SHAREHOLDER_MEETING),   # Submission of Matters to Vote of Security Holders
+    ("4.02", AnnouncementEventType.ACCOUNTING_ISSUE),      # Non-Reliance on Previous Financials
+    ("3.01", AnnouncementEventType.CRISIS),                # Notice of Delisting / Failure to Satisfy Listing Rule
+    ("7.01", AnnouncementEventType.REGULATION_FD),         # Reg FD Disclosure (공정공시)
+    ("8.01", AnnouncementEventType.MAJOR_EVENT),           # Other Events (fallback)
 ]
+
+# 채권 발행 키워드 (Item 1.01 + 본문이 회사채 관련일 때 DEBT_ISSUANCE로 보강).
+# title에 적용하는 _TITLE_KEYWORD_MAP에서 처리.
 
 _TITLE_KEYWORD_MAP: list[tuple[str, AnnouncementEventType]] = [
     ("merger", AnnouncementEventType.MERGER_ACQUISITION),
@@ -67,6 +74,15 @@ _TITLE_KEYWORD_MAP: list[tuple[str, AnnouncementEventType]] = [
     ("contract", AnnouncementEventType.CONTRACT),
     ("partnership", AnnouncementEventType.CONTRACT),
     ("mou", AnnouncementEventType.CONTRACT),
+    # v2 신규 — 정기 IR / 자본 조달
+    ("quarterly results", AnnouncementEventType.EARNINGS_RELEASE),
+    ("earnings", AnnouncementEventType.EARNINGS_RELEASE),
+    ("notes due", AnnouncementEventType.DEBT_ISSUANCE),
+    ("senior notes", AnnouncementEventType.DEBT_ISSUANCE),
+    ("bond", AnnouncementEventType.DEBT_ISSUANCE),
+    ("debentures", AnnouncementEventType.DEBT_ISSUANCE),
+    ("annual meeting", AnnouncementEventType.SHAREHOLDER_MEETING),
+    ("special meeting", AnnouncementEventType.SHAREHOLDER_MEETING),
 ]
 
 _cik_cache: dict[str, str] = {}
@@ -384,6 +400,7 @@ class SecEdgarAnnouncementClient(SecEdgarAnnouncementPort):
                 title=title,
                 source="sec_edgar",
                 url=filing_url,
+                items_str=items_str or None,
             ))
 
         logger.info("[SecEdgar] ticker=%s, CIK=%s, 8-K 수집=%d건", ticker, cik, len(events))

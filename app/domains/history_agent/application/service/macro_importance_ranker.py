@@ -103,12 +103,14 @@ async def _score_batch(
 
 def _build_cache_key(
     scope_ticker: str, event: TimelineEvent
-) -> Tuple[str, Any, str, str]:
+) -> Tuple[str, Any, str, str, str]:
+    """5-tuple — MacroImportanceRanker는 v1만 사용."""
     return (
         scope_ticker,
         event.date,
         event.type,
         compute_detail_hash(event.detail),
+        "v1",
     )
 
 
@@ -152,7 +154,8 @@ class MacroImportanceRanker:
             )
             raise
         cache_map: Dict[Tuple, EventEnrichment] = {
-            (r.ticker, r.event_date, r.event_type, r.detail_hash): r for r in cached
+            (r.ticker, r.event_date, r.event_type, r.detail_hash, r.classifier_version): r
+            for r in cached
         }
 
         miss_events: List[TimelineEvent] = []
@@ -199,7 +202,7 @@ class MacroImportanceRanker:
             original_idx = miss_indices[idx_in_miss]
             event = targets[original_idx]
             event.importance_score = score
-            ticker, event_date, event_type, detail_hash = keys[original_idx]
+            ticker, event_date, event_type, detail_hash, version = keys[original_idx]
             new_rows.append(
                 EventEnrichment(
                     ticker=ticker,
@@ -208,6 +211,7 @@ class MacroImportanceRanker:
                     detail_hash=detail_hash,
                     title=event.title or event.type,
                     importance_score=score,
+                    classifier_version=version,
                 )
             )
 
