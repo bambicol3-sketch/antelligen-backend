@@ -65,15 +65,21 @@ from app.domains.history_agent.domain.entity.event_enrichment import (
     EventEnrichment,
     compute_detail_hash,
 )
+from app.domains.stock.market_data.application.port.out.event_impact_metric_repository_port import (
+    EventImpactMetricRepositoryPort,
+)
+from app.domains.stock.market_data.domain.entity.event_impact_metric import (
+    EventImpactMetric,
+)
 from app.infrastructure.config.settings import get_settings
 from app.infrastructure.langgraph.llm_factory import get_workflow_llm
 
 logger = logging.getLogger(__name__)
 
 _CACHE_TTL = 3600
-# v6: KR A.1/A.2 — ANNOUNCEMENT type 재분류(v2 분류기) + importance_score_1to5(1~5 정수) + items_str
-# 스키마 변경. v5 캐시 무효화.
-_CACHE_VERSION = "v6"
+# v7: PR3 — TimelineEvent에 abnormal_return_5d/20d/ar_status/benchmark_ticker 추가.
+# v6 캐시 무효화 (옵셔널 필드라 역직렬화 호환은 되지만 stale cache 가 AR 미반영이라 의미 없음).
+_CACHE_VERSION = "v7"
 
 _SUPPORTED_ASSET_TYPES = {"EQUITY", "INDEX", "ETF"}
 
@@ -590,6 +596,7 @@ class HistoryAgentUseCase:
         etf_holdings_port: Optional[EtfHoldingsPort] = None,
         related_assets_port: Optional[RelatedAssetsPort] = None,
         gpr_index_port: Optional[GprIndexPort] = None,
+        event_impact_repo: Optional[EventImpactMetricRepositoryPort] = None,
     ):
         self._stock_bars_port = stock_bars_port
         self._yfinance_corporate_port = yfinance_corporate_port
@@ -603,6 +610,7 @@ class HistoryAgentUseCase:
         self._etf_holdings_port = etf_holdings_port
         self._related_assets_port = related_assets_port
         self._gpr_index_port = gpr_index_port
+        self._event_impact_repo = event_impact_repo
         self._event_importance_service = EventImportanceService(enrichment_repo)
         self._event_classifier_service = EventClassifierService(enrichment_repo)
 
@@ -741,6 +749,9 @@ class HistoryAgentUseCase:
             "[HistoryAgent] [2/4] DB enrichment 조회: hit=%d, miss=%d",
             len(timeline) - len(new_events), len(new_events),
         )
+
+        # AR 메트릭은 importance prompt에 합류하므로 score() 전에 채운다.
+        await self._apply_event_impact_metrics(ticker, timeline)
 
         # 2) causality / 비-PRICE 타이틀 / 공시 요약을 병렬 실행.
         #    §13.4 C에서 PRICE 카테고리가 제거되어 price_titles 체인은 불필요.
@@ -914,6 +925,10 @@ class HistoryAgentUseCase:
 
         await _notify("title_gen", "AI 타이틀 생성 중...", 70)
 
+        # AR 메트릭은 importance prompt 에 합류하므로 score() 전에 채운다.
+        # ETF holdings 이벤트는 현재 PR2 스코프에서 BENCHMARK_MISSING 처리되어 None 반환.
+        await self._apply_event_impact_metrics(ticker, timeline)
+
         async def _etf_classify_then_score_v2() -> None:
             await self._event_classifier_service.classify(ticker, timeline)
             await self._event_importance_service.score_v2(ticker, timeline)
@@ -1083,6 +1098,72 @@ class HistoryAgentUseCase:
                 continue
             collected.extend(result)
         return collected
+
+    async def _apply_event_impact_metrics(
+        self, ticker: str, timeline: List[TimelineEvent]
+    ) -> None:
+        """event_impact_metrics 의 5d/20d AR을 timeline 이벤트에 in-place 주입.
+
+        - repo 미주입(테스트 환경 등) 또는 timeline 빈 경우 no-op
+        - status="OK" 메트릭만 abnormal_return_*d 채움. 다른 status 는 ar_status 만 기록
+        - 같은 (ticker,date,type,detail_hash) 의 5d/20d 행 두 개를 한번에 매핑
+        """
+        if self._event_impact_repo is None or not timeline:
+            return
+
+        keys = [
+            (
+                ticker,
+                e.date,
+                e.type,
+                compute_detail_hash(e.detail, e.constituent_ticker),
+            )
+            for e in timeline
+        ]
+        try:
+            metrics = await self._event_impact_repo.find_by_event_keys(keys)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[HistoryAgent] event_impact 조회 실패 (graceful, AR 미주입): %s", exc,
+            )
+            return
+
+        # (ticker, date, type, detail_hash) → {post_days: metric}
+        by_key: Dict[Tuple[str, date, str, str], Dict[int, EventImpactMetric]] = {}
+        for m in metrics:
+            k = (m.ticker, m.event_date, m.event_type, m.detail_hash)
+            by_key.setdefault(k, {})[m.post_days] = m
+
+        applied = 0
+        for event in timeline:
+            k = (
+                ticker,
+                event.date,
+                event.type,
+                compute_detail_hash(event.detail, event.constituent_ticker),
+            )
+            windows = by_key.get(k)
+            if not windows:
+                continue
+            applied += 1
+            # 5d / 20d AR — status="OK" 인 행만 값 노출
+            m5 = windows.get(5)
+            m20 = windows.get(20)
+            if m5 and m5.status == "OK":
+                event.abnormal_return_5d = m5.abnormal_return_pct
+            if m20 and m20.status == "OK":
+                event.abnormal_return_20d = m20.abnormal_return_pct
+            # 5d 우선으로 status/benchmark 결정 (없으면 20d)
+            primary = m5 or m20
+            if primary:
+                event.ar_status = primary.status
+                if primary.benchmark_ticker:
+                    event.benchmark_ticker = primary.benchmark_ticker
+        if applied:
+            logger.info(
+                "[HistoryAgent] AR 메트릭 적용: ticker=%s applied=%d/%d",
+                ticker, applied, len(timeline),
+            )
 
     async def _load_enrichments(
         self, ticker: str, timeline: List[TimelineEvent]

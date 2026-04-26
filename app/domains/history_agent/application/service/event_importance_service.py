@@ -30,6 +30,7 @@ from app.domains.history_agent.domain.entity.event_enrichment import (
     EventEnrichment,
     compute_detail_hash,
 )
+from app.infrastructure.config.settings import get_settings
 from app.infrastructure.langgraph.llm_factory import get_workflow_llm
 
 logger = logging.getLogger(__name__)
@@ -133,11 +134,25 @@ def _base_score(event_type: str) -> float:
     return _TYPE_BASE_SCORE.get(event_type, _FALLBACK_SCORE)
 
 
+def _ar_suffix(event: TimelineEvent) -> str:
+    """AR 시그널이 있으면 prompt 라인에 ` ar_5d=+3.2%` 형태로 부착.
+
+    flag `event_impact_in_importance_prompt`로 가드. ar_status="OK" 인 행만 사용 —
+    INSUFFICIENT_DATA 등은 노이즈가 되므로 prompt 에 넣지 않음.
+    """
+    if not get_settings().event_impact_in_importance_prompt:
+        return ""
+    if event.ar_status != "OK" or event.abnormal_return_5d is None:
+        return ""
+    return f" ar_5d={event.abnormal_return_5d:+.2f}%"
+
+
 def _build_line(idx: int, event: TimelineEvent) -> str:
     base = _base_score(event.type)
     return (
         f"{idx + 1}. type={event.type} base={base:.2f} "
-        f"date={event.date.isoformat()} detail={event.detail[:200]}"
+        f"date={event.date.isoformat()}{_ar_suffix(event)} "
+        f"detail={event.detail[:200]}"
     )
 
 
@@ -234,7 +249,8 @@ def _build_line_v2(idx: int, event: TimelineEvent) -> str:
     base = _base_score_1to5(event.type)
     return (
         f"{idx + 1}. type={event.type} base={base} "
-        f"date={event.date.isoformat()} detail={event.detail[:200]}"
+        f"date={event.date.isoformat()}{_ar_suffix(event)} "
+        f"detail={event.detail[:200]}"
     )
 
 

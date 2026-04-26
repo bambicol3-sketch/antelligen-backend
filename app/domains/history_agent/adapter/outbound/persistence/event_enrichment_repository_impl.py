@@ -1,5 +1,5 @@
 from datetime import date
-from typing import List, Tuple, Union
+from typing import List, Tuple
 
 from sqlalchemy import select, tuple_
 from sqlalchemy.dialects.postgresql import insert

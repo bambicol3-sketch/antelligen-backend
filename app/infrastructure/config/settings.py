@@ -104,6 +104,14 @@ class Settings(BaseSettings):
     enable_us_tickers: bool = False
     sec_edgar_user_agent: str = "Antelligen research@example.com"
 
+    # Event Impact (PR2/PR3) — AR 메트릭 통합 feature flags.
+    # event_impact_in_importance_prompt: EventImportanceService의 LLM prompt에 AR 텍스트 주입.
+    #   분포 안정화 후 numeric weighting으로 격상 검토 (별도 ADR).
+    # causality_use_cached_bars: causality_agent.gather_situation_node 가 daily_bars
+    #   적재 캐시를 우선 조회하고 미적중 시 yfinance fallback. 기본 off, 카나리 후 on.
+    event_impact_in_importance_prompt: bool = True
+    causality_use_cached_bars: bool = False
+
     # Source tier weighting
     enable_source_tier_weighting: bool = False
     tier_multiplier_high: float = 1.0

@@ -45,6 +45,9 @@ from app.domains.history_agent.adapter.outbound.macro_context_adapter import (
 from app.domains.history_agent.adapter.outbound.persistence.event_enrichment_repository_impl import (
     EventEnrichmentRepositoryImpl,
 )
+from app.domains.stock.market_data.adapter.outbound.persistence.event_impact_metric_repository_impl import (
+    EventImpactMetricRepositoryImpl,
+)
 from app.domains.history_agent.application.usecase.collect_important_macro_events_usecase import (
     CollectImportantMacroEventsUseCase,
 )
@@ -141,6 +144,7 @@ def get_history_agent_usecase(
         etf_holdings_port=_etf_holdings_port(),
         related_assets_port=_related_assets_port(),
         gpr_index_port=_gpr_index_port(),
+        event_impact_repo=EventImpactMetricRepositoryImpl(db),
     )
 
 

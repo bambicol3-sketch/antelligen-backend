@@ -32,6 +32,12 @@ class TimelineEvent(BaseModel):
     classifier_version: Optional[str] = None
     # SEC 8-K raw Item 코드(예: "1.01,9.01"). KR A.1 빈도 분석 / classifier 입력에 사용.
     items_str: Optional[str] = None
+    # PR2/PR3 — Abnormal return 메트릭. EQUITY 한정, 매일 KST 08:00 batch로 채워진다.
+    # 미계산/비-EQUITY/데이터 부족 시 None.
+    abnormal_return_5d: Optional[float] = None
+    abnormal_return_20d: Optional[float] = None
+    ar_status: Optional[str] = None
+    benchmark_ticker: Optional[str] = None
 
 
 class TimelineResponse(BaseModel):
