@@ -1,5 +1,5 @@
 from datetime import date
-from typing import Any, Dict, List, TypedDict
+from typing import Any, Dict, List, Optional, TypedDict
 
 
 class HypothesisSource(TypedDict, total=False):
@@ -67,6 +67,12 @@ class AnalystRecommendation(TypedDict, total=False):
     strong_sell: int
 
 
+class MarketBenchmark(TypedDict, total=False):
+    symbol: str       # "^KS11" | "^GSPC"
+    name: str         # "KOSPI" | "S&P 500"
+    bars: List[Dict[str, Any]]   # [{date, close}]
+
+
 class CausalityAgentState(TypedDict):
     # ── 입력 ──────────────────────────────────────────────────
     ticker: str
@@ -83,6 +89,7 @@ class CausalityAgentState(TypedDict):
     gpr_observations: List[GprObservation]
     announcements: List[AnnouncementItem]  # SEC EDGAR 8-K 공시 (미국). DART 는 별도 후속 PR.
     analyst_recommendations: List[AnalystRecommendation]  # Finnhub buy/hold/sell 월별 트렌드 (미국)
+    market_benchmark: Optional[MarketBenchmark]  # ^KS11(KR) | ^GSPC(US). 종목 alpha 계산용
 
     # ── generate_hypotheses 노드 출력 ────────────────────────
     hypotheses: List[Hypothesis]

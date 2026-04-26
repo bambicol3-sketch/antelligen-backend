@@ -60,6 +60,7 @@ async def run_causality_agent(
         "gpr_observations": [],
         "announcements": [],
         "analyst_recommendations": [],
+        "market_benchmark": None,
         "hypotheses": [],
         "tool_call_log": [],
         "errors": [],
@@ -68,9 +69,11 @@ async def run_causality_agent(
     logger.info("[CausalityAgent] 시작: ticker=%s, 기간=%s ~ %s", ticker, start_date, end_date)
     logger.info("[CausalityAgent] ══════════════════════════════════════")
     result = await _compiled.ainvoke(initial)
+    mb = result.get("market_benchmark")
+    mb_label = f"{mb['symbol']}({len(mb.get('bars', []))})" if mb else "none"
     logger.info(
         "[CausalityAgent] 완료: ticker=%s, ohlcv=%d, fred=%d, assets=%d, "
-        "news=%d, gpr=%d, ann=%d, rec=%d, hypotheses=%d, tools=%s, errors=%d",
+        "news=%d, gpr=%d, ann=%d, rec=%d, mb=%s, hypotheses=%d, tools=%s, errors=%d",
         ticker,
         len(result.get("ohlcv_bars", [])),
         len(result.get("fred_series", [])),
@@ -79,6 +82,7 @@ async def run_causality_agent(
         len(result.get("gpr_observations", [])),
         len(result.get("announcements", [])),
         len(result.get("analyst_recommendations", [])),
+        mb_label,
         len(result.get("hypotheses", [])),
         result.get("tool_call_log", []),
         len(result.get("errors", [])),

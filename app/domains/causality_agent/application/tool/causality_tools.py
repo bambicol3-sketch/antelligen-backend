@@ -138,6 +138,23 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
             "required": [],
         },
     },
+    {
+        "name": "get_market_comparison",
+        "description": (
+            "분석 대상 종목의 같은 기간 수익률을 시장 벤치마크(한국=^KS11/KOSPI, 미국=^GSPC/S&P500)와 비교한다. "
+            "종목 영향과 시장 전체 영향을 분리하기 위한 alpha 계산. window_days=0 이면 전체 수집 기간."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "window_days": {
+                    "type": "integer",
+                    "description": "최근 N 거래일 (0=전체)",
+                }
+            },
+            "required": [],
+        },
+    },
 ]
 
 
@@ -307,6 +324,53 @@ def _exec_get_analyst_recommendations(state: CausalityAgentState, inputs: Dict[s
     )
 
 
+def _exec_get_market_comparison(state: CausalityAgentState, inputs: Dict[str, Any]) -> str:
+    benchmark = state.get("market_benchmark")
+    if not benchmark:
+        return json.dumps({"available": False, "reason": "벤치마크 미수집"})
+
+    bars = state.get("ohlcv_bars", [])
+    bm_bars = benchmark.get("bars", [])
+    if len(bars) < 2 or len(bm_bars) < 2:
+        return json.dumps({"available": False, "reason": "데이터 부족"})
+
+    window = int(inputs.get("window_days", 0))
+    if window > 0:
+        bars = bars[-window:]
+        bm_bars = bm_bars[-window:]
+        if len(bars) < 2 or len(bm_bars) < 2:
+            return json.dumps({"available": False, "reason": "window 데이터 부족"})
+
+    ticker_start = bars[0]["close"]
+    ticker_end = bars[-1]["close"]
+    bm_start = bm_bars[0]["close"]
+    bm_end = bm_bars[-1]["close"]
+
+    if ticker_start <= 0 or bm_start <= 0:
+        return json.dumps({"available": False, "reason": "기준가 부정"})
+
+    ticker_return = (ticker_end - ticker_start) / ticker_start * 100.0
+    bm_return = (bm_end - bm_start) / bm_start * 100.0
+    alpha = ticker_return - bm_return
+
+    return json.dumps(
+        {
+            "available": True,
+            "period_days": len(bars),
+            "ticker_return_pct": round(ticker_return, 2),
+            "market_symbol": benchmark.get("symbol"),
+            "market_name": benchmark.get("name"),
+            "market_return_pct": round(bm_return, 2),
+            "alpha_pct": round(alpha, 2),
+            "interpretation": (
+                "시장 대비 outperform" if alpha > 0
+                else "시장 대비 underperform" if alpha < 0
+                else "시장과 동일"
+            ),
+        }
+    )
+
+
 _EXECUTORS = {
     "get_price_stats": _exec_get_price_stats,
     "get_correlated_asset": _exec_get_correlated_asset,
@@ -315,6 +379,7 @@ _EXECUTORS = {
     "get_gpr_summary": _exec_get_gpr_summary,
     "get_announcements": _exec_get_announcements,
     "get_analyst_recommendations": _exec_get_analyst_recommendations,
+    "get_market_comparison": _exec_get_market_comparison,
 }
 
 
@@ -370,6 +435,14 @@ def make_langchain_tools(state: CausalityAgentState) -> List[StructuredTool]:
             state,
         )
 
+    def get_market_comparison(window_days: int = 0) -> str:
+        """종목 vs 시장 벤치마크(KR=^KS11 / US=^GSPC) cumulative return 차이(alpha). window_days=0=전체."""
+        return execute_tool(
+            "get_market_comparison",
+            {"window_days": window_days},
+            state,
+        )
+
     return [
         StructuredTool.from_function(get_price_stats),
         StructuredTool.from_function(get_correlated_asset),
@@ -378,4 +451,5 @@ def make_langchain_tools(state: CausalityAgentState) -> List[StructuredTool]:
         StructuredTool.from_function(get_gpr_summary),
         StructuredTool.from_function(get_announcements),
         StructuredTool.from_function(get_analyst_recommendations),
+        StructuredTool.from_function(get_market_comparison),
     ]

@@ -7,6 +7,9 @@ from app.domains.causality_agent.adapter.outbound.external.finnhub_news_client i
 )
 from app.domains.causality_agent.adapter.outbound.external.gdelt_client import GdeltClient
 from app.domains.causality_agent.adapter.outbound.external.gpr_index_client import GprIndexClient
+from app.domains.causality_agent.adapter.outbound.external.market_benchmark_client import (
+    MarketBenchmarkClient,
+)
 from app.domains.causality_agent.adapter.outbound.external.naver_korean_news_client import (
     NaverKoreanNewsClient,
 )
@@ -217,15 +220,30 @@ async def collect_non_economic(state: CausalityAgentState) -> Dict[str, Any]:
     end_date = state["end_date"]
     errors: list = list(state.get("errors", []))
 
-    logger.info("[CausalityAgent] [2/3] 연관자산 + 뉴스 + GPR + 공시 + 분석가 추천 수집 시작")
+    logger.info(
+        "[CausalityAgent] [2/3] 연관자산 + 뉴스 + GPR + 공시 + 분석가 추천 + 시장 벤치마크 수집 시작"
+    )
     related_task = RelatedAssetsClient().fetch(start_date, end_date)
     news_task = _collect_news(ticker, start_date, end_date)
     gpr_task = GprIndexClient().fetch(start_date, end_date)
     announcements_task = _collect_announcements(ticker, start_date, end_date)
     rec_task = _collect_analyst_recommendations(ticker)
+    benchmark_task = MarketBenchmarkClient().fetch(ticker, start_date, end_date)
 
-    related_result, news_result, gpr_result, ann_result, rec_result = await asyncio.gather(
-        related_task, news_task, gpr_task, announcements_task, rec_task,
+    (
+        related_result,
+        news_result,
+        gpr_result,
+        ann_result,
+        rec_result,
+        benchmark_result,
+    ) = await asyncio.gather(
+        related_task,
+        news_task,
+        gpr_task,
+        announcements_task,
+        rec_task,
+        benchmark_task,
         return_exceptions=True,
     )
 
@@ -269,13 +287,26 @@ async def collect_non_economic(state: CausalityAgentState) -> Dict[str, Any]:
     else:
         analyst_recommendations = rec_result
 
+    market_benchmark = None
+    if isinstance(benchmark_result, Exception):
+        msg = f"시장 벤치마크 수집 실패: {benchmark_result}"
+        logger.warning("[CausalityAgent] %s", msg)
+        errors.append(msg)
+    else:
+        market_benchmark = benchmark_result
+
+    mb_label = (
+        f"{market_benchmark['symbol']}({len(market_benchmark.get('bars', []))})"
+        if market_benchmark else "none"
+    )
     logger.info(
-        "[CausalityAgent] [2/3] 완료: assets=%d, news=%d, gpr=%d, ann=%d, rec=%d",
+        "[CausalityAgent] [2/3] 완료: assets=%d, news=%d, gpr=%d, ann=%d, rec=%d, mb=%s",
         len(related_assets),
         len(news_articles),
         len(gpr_observations),
         len(announcements),
         len(analyst_recommendations),
+        mb_label,
     )
     return {
         "related_assets": related_assets,
@@ -283,5 +314,6 @@ async def collect_non_economic(state: CausalityAgentState) -> Dict[str, Any]:
         "gpr_observations": gpr_observations,
         "announcements": announcements,
         "analyst_recommendations": analyst_recommendations,
+        "market_benchmark": market_benchmark,
         "errors": errors,
     }
