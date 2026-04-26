@@ -16,6 +16,7 @@ from app.domains.history_agent.application.response.title_response import (
 from app.domains.history_agent.application.service.title_generation_service import (
     OTHER_TITLE_SYSTEM,
     batch_titles,
+    is_pseudo_announcement_title_str,
 )
 from app.domains.history_agent.domain.entity.event_enrichment import (
     EventEnrichment,
@@ -58,7 +59,13 @@ class GenerateTitlesUseCase:
 
         for idx, (event, h) in enumerate(zip(events, hashes)):
             cached = db_map.get((ticker, event.date, event.type, h))
-            if cached:
+            # 옛 backend가 저장한 raw form pseudo title("{ticker} 8-K", "{ticker} 주요 공시")은
+            # frontend에서 자연어 event.title을 덮어쓰는 stale 데이터. miss로 처리해 LLM 재호출 + DB 갱신.
+            is_stale_pseudo = (
+                cached is not None
+                and is_pseudo_announcement_title_str(cached.title)
+            )
+            if cached and not is_stale_pseudo:
                 titles[idx] = cached.title
             else:
                 miss_events.append(event)

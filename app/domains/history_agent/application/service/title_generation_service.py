@@ -129,6 +129,19 @@ def is_fallback_title(event: TimelineEvent) -> bool:
     return event.title == FALLBACK_TITLE.get(event.type, event.type)
 
 
+def is_pseudo_announcement_title_str(title: Optional[str]) -> bool:
+    """`_announcement_title()`이 만든 source-기반 prefix 패턴인지 title 문자열만으로 판정.
+
+    `event_enrichment` 캐시 검증처럼 TimelineEvent.category 정보가 없는 시점에서도
+    옛 backend가 저장한 stale row("{ticker} 8-K", "{ticker} 주요 공시")를 LLM 재처리
+    대상에 포함시키기 위해 사용. fallback label 패턴은 type 정보가 필요해 여기서 다루지
+    않고, TimelineEvent를 받는 `is_pseudo_announcement_title`에서 추가 검증한다.
+    """
+    if not title:
+        return True
+    return title.endswith(" 8-K") or title.endswith(" 주요 공시")
+
+
 def is_pseudo_announcement_title(event: TimelineEvent) -> bool:
     """`_announcement_title()`이 만든 ticker prefix 임시 타이틀인지 판정.
 
@@ -140,13 +153,10 @@ def is_pseudo_announcement_title(event: TimelineEvent) -> bool:
     """
     if event.category != "ANNOUNCEMENT":
         return False
-    title = event.title or ""
-    if not title:
-        return True
-    # source-기반 prefix 패턴
-    if title.endswith(" 8-K") or title.endswith(" 주요 공시"):
+    if is_pseudo_announcement_title_str(event.title):
         return True
     # 일반 fallback 패턴: "{ticker} {fallback_label}"
+    title = event.title or ""
     fallback = FALLBACK_TITLE.get(event.type)
     if fallback and title.endswith(f" {fallback}"):
         return True

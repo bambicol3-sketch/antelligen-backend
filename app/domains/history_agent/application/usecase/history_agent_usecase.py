@@ -60,6 +60,7 @@ from app.domains.history_agent.application.service.title_generation_service impo
     TITLE_MODEL,
     enrich_macro_titles,
     enrich_other_titles,
+    is_pseudo_announcement_title_str,
 )
 from app.domains.history_agent.domain.entity.event_enrichment import (
     EventEnrichment,
@@ -1209,7 +1210,14 @@ class HistoryAgentUseCase:
                 compute_detail_hash(event.detail, event.constituent_ticker),
             )
             enrichment = db_map.get(key)
-            if enrichment:
+            # 옛 backend가 ANNOUNCEMENT에 _announcement_title()의 raw form을 그대로 캐시한 경우
+            # cache hit이라도 LLM 재처리 + DB 갱신 대상으로 들어가도록 stale 판정.
+            is_stale_pseudo = (
+                enrichment is not None
+                and event.category == "ANNOUNCEMENT"
+                and is_pseudo_announcement_title_str(enrichment.title)
+            )
+            if enrichment and not is_stale_pseudo:
                 event.title = enrichment.title
                 if enrichment.causality:
                     event.causality = [HypothesisResult(**h) for h in enrichment.causality]
