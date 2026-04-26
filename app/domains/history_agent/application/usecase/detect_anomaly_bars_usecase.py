@@ -89,6 +89,20 @@ def _time_of_day(bars: List[StockBar], idx: int, chart_interval: str) -> Optiona
     return "GAP" if gap > intraday else "INTRADAY"
 
 
+def _cumulative_return(bars: List[StockBar], idx: int, n: int) -> Optional[float]:
+    """spike 봉(idx) 종가 기준 +n봉 후 raw 누적 수익률(%). 미래 데이터 부족하면 None.
+
+    봉 단위 무관 — 일봉이면 +n거래일, 주봉이면 +n주. benchmark 미차감(raw).
+    """
+    target_idx = idx + n
+    if target_idx >= len(bars):
+        return None
+    base = bars[idx].close
+    if base <= 0:
+        return None
+    return round((bars[target_idx].close / base - 1.0) * 100.0, 4)
+
+
 def detect_anomalies(
     bars: List[StockBar], chart_interval: str
 ) -> List[AnomalyBarResponse]:
@@ -139,6 +153,9 @@ def detect_anomalies(
             close=round(bars[idx].close, 4),
             volume_ratio=_volume_ratio(bars, idx, params.window),
             time_of_day=_time_of_day(bars, idx, chart_interval),
+            cumulative_return_1d=_cumulative_return(bars, idx, 1),
+            cumulative_return_5d=_cumulative_return(bars, idx, 5),
+            cumulative_return_20d=_cumulative_return(bars, idx, 20),
             causality=None,
         )
         for idx, ret_pct, z in top

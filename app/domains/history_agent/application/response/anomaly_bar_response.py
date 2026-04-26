@@ -14,6 +14,9 @@ class AnomalyBarResponse(BaseModel):
     - `time_of_day`: 일봉(1D)에서만 채워지는 갭/장중 근사 — "GAP" | "INTRADAY".
       |open-prev_close| > |close-open| 이면 GAP. 분봉 미수집 환경의 best-effort 근사.
       일봉 외(주/월/분기봉) 또는 prev close 부재 시 None.
+    - `cumulative_return_1d/5d/20d`: spike 봉 종가 기준 +N봉 후 raw 누적 수익률(%).
+      봉 단위 무관 — 일봉이면 +N거래일, 주봉이면 +N주. benchmark 미차감(raw).
+      bars 배열에 충분한 미래 데이터가 없으면 None.
     - `causality`: 초기엔 null. 마커 클릭 시 `/anomaly-bars/{ticker}/{date}/causality`
       엔드포인트가 lazy-fetch 한다.
     """
@@ -24,6 +27,9 @@ class AnomalyBarResponse(BaseModel):
     close: float
     volume_ratio: Optional[float] = None
     time_of_day: Optional[str] = None
+    cumulative_return_1d: Optional[float] = None
+    cumulative_return_5d: Optional[float] = None
+    cumulative_return_20d: Optional[float] = None
     causality: Optional[str] = None
 
 
