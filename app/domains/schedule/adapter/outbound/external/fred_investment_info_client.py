@@ -5,6 +5,7 @@ FRED API 문서: https://fred.stlouisfed.org/docs/api/fred/
 - 결측치(".")는 건너뛰고 직전 유효값을 사용
 """
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Optional, Tuple
@@ -92,10 +93,21 @@ _SERIES_TABLE: dict[InvestmentInfoType, Tuple[str, str, str]] = {
 
 
 class FredInvestmentInfoClient(InvestmentInfoProviderPort):
-    def __init__(self, api_key: str, timeout_seconds: float = 5.0, lookback: int = 30):
+    def __init__(
+        self,
+        api_key: str,
+        timeout_seconds: float = 5.0,
+        lookback: int = 30,
+        max_retries: int = 2,
+        initial_backoff: float = 1.0,
+    ):
         self._api_key = api_key
         self._timeout = timeout_seconds
         self._lookback = lookback  # 결측/휴일 고려하여 최근 N 관측치에서 유효값을 찾는다
+        # FRED 가 한국 IP/외국망에서 가끔 5xx 를 토하는 패턴 — 짧은 backoff retry 로 회복.
+        # 4xx (인증/파라미터 결함) 는 deterministic 이므로 retry 하지 않는다.
+        self._max_retries = max_retries
+        self._initial_backoff = initial_backoff
 
     def supports(self, info_type: InvestmentInfoType) -> bool:
         return info_type in _SERIES_TABLE
@@ -119,8 +131,7 @@ class FredInvestmentInfoClient(InvestmentInfoProviderPort):
             "limit": str(self._lookback),
         }
 
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            response = await client.get(FRED_BASE_URL, params=params)
+        response = await self._fetch_with_retry(params)
 
         if response.status_code != 200:
             raise RuntimeError(
@@ -157,6 +168,51 @@ class FredInvestmentInfoClient(InvestmentInfoProviderPort):
             source="FRED (Federal Reserve Economic Data)",
             description=description,
         )
+
+    async def _fetch_with_retry(self, params: dict) -> httpx.Response:
+        """5xx 와 일시 네트워크 오류에 대해 짧은 backoff retry. 4xx 는 즉시 반환.
+
+        반환된 response 의 status_code 가 5xx 면 호출자가 예외 처리.
+        모든 retry 가 5xx 면 마지막 5xx response 를 반환.
+        """
+        backoff = self._initial_backoff
+        last_response: Optional[httpx.Response] = None
+
+        for attempt in range(self._max_retries + 1):
+            try:
+                async with httpx.AsyncClient(timeout=self._timeout) as client:
+                    response = await client.get(FRED_BASE_URL, params=params)
+            except httpx.RequestError as exc:
+                if attempt < self._max_retries:
+                    logger.info(
+                        "[schedule.fred] 네트워크 오류 재시도 attempt=%d/%d "
+                        "err=%r backoff=%.1fs",
+                        attempt + 1, self._max_retries, exc, backoff,
+                    )
+                    await asyncio.sleep(backoff)
+                    backoff *= 2
+                    continue
+                raise
+
+            if 500 <= response.status_code < 600:
+                last_response = response
+                if attempt < self._max_retries:
+                    logger.info(
+                        "[schedule.fred] 5xx 재시도 attempt=%d/%d "
+                        "status=%d backoff=%.1fs",
+                        attempt + 1, self._max_retries,
+                        response.status_code, backoff,
+                    )
+                    await asyncio.sleep(backoff)
+                    backoff *= 2
+                    continue
+                return response
+
+            return response
+
+        # unreachable in practice — 모든 5xx 는 위 return 에서 처리
+        assert last_response is not None
+        return last_response
 
     @staticmethod
     def _pick_latest_valid(observations: list) -> Tuple[Optional[float], Optional[str]]:
