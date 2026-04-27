@@ -6,7 +6,6 @@ PriceEventCollector 단위 테스트 — 삼성전자(005930.KS) 1년치 수준�
 from datetime import date, timedelta
 from typing import List
 
-import pytest
 
 from app.domains.dashboard.domain.entity.price_event import PriceEventType
 from app.domains.dashboard.domain.entity.stock_bar import StockBar

@@ -3,9 +3,7 @@ _enrich_causality 단위 테스트.
 
 run_causality_agent를 mock으로 대체하므로 외부 API 없이 즉시 실행된다.
 """
-import asyncio
 import datetime
-from typing import List
 from unittest.mock import AsyncMock, patch
 
 import pytest  # noqa: F401  — pytest auto-asyncio mode가 async 테스트를 자동 수집
@@ -13,10 +11,8 @@ import pytest  # noqa: F401  — pytest auto-asyncio mode가 async 테스트를 
 from app.domains.history_agent.application.response.timeline_response import (
     HypothesisResult,
     TimelineEvent,
-    TimelineResponse,
 )
 from app.domains.history_agent.application.usecase.history_agent_usecase import (
-    _CAUSALITY_TRIGGER_TYPES,
     _MAX_CAUSALITY_EVENTS,
     _enrich_causality,
 )

@@ -1,6 +1,6 @@
 """§13.4 B follow-up: enrich_macro_titles Redis 캐시 동작 검증."""
 from datetime import date
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
