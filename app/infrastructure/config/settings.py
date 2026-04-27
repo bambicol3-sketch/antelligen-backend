@@ -86,6 +86,13 @@ class Settings(BaseSettings):
     # 기본값은 gpt-5-mini 기준 보수적으로 설정. 모델 변경 시 env 로 override.
     history_macro_reason_cutoff: str = "2024-08-01"
 
+    # KR4 (다층 이상치 탐지) — robust σ 디버그 모드.
+    # "off"    — 기존 statistics.stdev (default)
+    # "stable" — 안정 구간(|r|<3%) 만 가지고 stdev 계산 — 직전 급등이 σ 부풀리는 문제 회피
+    # "mad"    — Median Absolute Deviation × 1.4826 (정규분포 환산)
+    # 디버그용 — 운영 종목별로 어떤 방법이 잘 맞는지 사용자가 env로 swap 평가.
+    anomaly_robust_sigma_method: str = "off"
+
     # Data-source expansion (Tier A/B/C)
     history_holdings_concurrency: int = 3
     history_news_top_n: int = 10

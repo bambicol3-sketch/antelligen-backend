@@ -8,10 +8,14 @@ from app.domains.dashboard.domain.entity.stock_bar import StockBar
 from app.domains.history_agent.application.usecase.detect_anomaly_bars_usecase import (
     _CUMULATIVE_5D_THRESHOLD,
     _CUMULATIVE_20D_THRESHOLD,
+    _DRAWDOWN_RECOVERY_THRESHOLD,
+    _DRAWDOWN_START_THRESHOLD,
     _FLOOR_BY_TICKER_GROUP_1D,
     _PARAMS_BY_INTERVAL,
     _classify_ticker_group,
+    _compute_sigma,
     _detect_cumulative_anomalies,
+    _detect_drawdown_anomalies,
     detect_anomalies,
 )
 
@@ -277,3 +281,112 @@ def test_default_ticker_falls_back_to_us():
     bars = _make_bars(closes)
     anomalies = detect_anomalies(bars, "1D")  # ticker 인자 미전달
     assert len(anomalies) == 1
+
+
+# ── KR3: Drawdown 변곡점 ─────────────────────────────────────
+
+
+def test_drawdown_constants_match_okr_spec():
+    assert _DRAWDOWN_START_THRESHOLD == -0.10
+    assert _DRAWDOWN_RECOVERY_THRESHOLD == -0.03
+
+
+def test_drawdown_start_marker_on_first_breach():
+    """60봉 평탄 + 1봉 -11% → drawdown_start 발동(고점 100 → 89, drawdown -11%)."""
+    closes = [100.0] * 61
+    closes.append(89.0)
+    bars = _make_bars(closes)
+    events = _detect_drawdown_anomalies(bars, "1D")
+    assert any(e.type == "drawdown_start" for e in events)
+    start = next(e for e in events if e.type == "drawdown_start")
+    assert start.direction == "down"
+    assert start.return_pct < -10.0
+
+
+def test_drawdown_recovery_pairs_with_start():
+    """-11% 진입 후 -2% 회복 → 시작-회복 한 쌍."""
+    closes = [100.0] * 61 + [89.0, 89.0, 98.0]  # 회복: -2%
+    bars = _make_bars(closes)
+    events = _detect_drawdown_anomalies(bars, "1D")
+    types = [e.type for e in events]
+    assert types.count("drawdown_start") == 1
+    assert types.count("drawdown_recovery") == 1
+    # 시작이 회복보다 앞 날짜.
+    start = next(e for e in events if e.type == "drawdown_start")
+    recovery = next(e for e in events if e.type == "drawdown_recovery")
+    assert start.date < recovery.date
+
+
+def test_drawdown_does_not_retrigger_inside_same_cycle():
+    """-11%, -12%, -13% 연속이어도 시작 마커는 1번만."""
+    closes = [100.0] * 61 + [89.0, 88.0, 87.0, 86.0, 85.0]
+    bars = _make_bars(closes)
+    events = _detect_drawdown_anomalies(bars, "1D")
+    starts = [e for e in events if e.type == "drawdown_start"]
+    assert len(starts) == 1
+
+
+def test_drawdown_only_for_daily_interval():
+    closes = [100.0] * 61 + [85.0]
+    bars = _make_bars(closes)
+    assert _detect_drawdown_anomalies(bars, "1W") == []
+    assert _detect_drawdown_anomalies(bars, "1M") == []
+
+
+# ── KR4: robust σ (stable / mad) ─────────────────────────────
+
+
+def test_compute_sigma_off_uses_stdev():
+    """method='off' 또는 'stdev' 는 기존 statistics.stdev."""
+    import statistics
+
+    window = [0.01, 0.02, -0.01, 0.0, 0.005]
+    expected = statistics.stdev(window)
+    assert _compute_sigma(window, "off") == pytest.approx(expected)
+    assert _compute_sigma(window, "stdev") == pytest.approx(expected)
+
+
+def test_compute_sigma_stable_filters_outliers_when_enough_data():
+    """stable: |r|≥3% 이상치를 제외한 stdev 사용 (충분한 데이터일 때)."""
+    # 30개의 미세 변동 + 5개의 큰 이상치 (5% 변동) — 큰 이상치 제외 시 σ 가 작아져야
+    stable_part = [0.005, -0.005] * 15
+    extremes = [0.05, -0.05, 0.06, -0.06, 0.04]
+    window = stable_part + extremes  # 35개
+    sigma_stable = _compute_sigma(window, "stable")
+    sigma_stdev = _compute_sigma(window, "off")
+    assert sigma_stable < sigma_stdev
+
+
+def test_compute_sigma_mad_uses_median_abs_deviation():
+    """MAD 방식 σ = median(|r-median|) × 1.4826."""
+    window = [0.0, 0.01, -0.01, 0.005, -0.005, 0.02, -0.02] * 10
+    sigma_mad = _compute_sigma(window, "mad")
+    assert sigma_mad > 0
+    # MAD 는 outlier resistant — stdev 와 다른 값.
+    sigma_stdev = _compute_sigma(window, "off")
+    assert sigma_mad != pytest.approx(sigma_stdev)
+
+
+def test_zscore_event_includes_sigma_method_field():
+    """응답에 sigma_method 디버그 필드 포함."""
+    closes = [100.0] * 61
+    closes.append(110.0)
+    bars = _make_bars(closes)
+    anomalies = detect_anomalies(bars, "1D", "AAPL")
+    assert all(e.sigma_method in {"stdev", "stable", "mad"} for e in anomalies if e.type == "zscore")
+
+
+# ── dedup with drawdown ───────────────────────────────────────
+
+
+def test_drawdown_passes_through_when_no_zscore_collision():
+    """Drawdown 마커는 같은 날 z-score 가 없을 때 detect_anomalies 결과에 통과."""
+    # 60봉 평탄 + -11% 한 봉 — z-score 와 drawdown_start 모두 잡히지만 z-score 우선.
+    # z-score 도 잡히려면 floor 통과 — US floor 5% 초과.
+    closes = [100.0] * 61 + [89.0]
+    bars = _make_bars(closes)
+    merged = detect_anomalies(bars, "1D", "AAPL")
+    same_day = [e for e in merged if e.date == bars[61].bar_date]
+    assert len(same_day) == 1
+    # z-score 우선 (drawdown 은 fallback)
+    assert same_day[0].type == "zscore"

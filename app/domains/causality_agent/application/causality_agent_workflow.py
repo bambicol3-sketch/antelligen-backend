@@ -1,5 +1,6 @@
 import logging
 from datetime import date
+from typing import Any, Dict, Optional
 
 from langgraph.graph import StateGraph
 
@@ -47,12 +48,20 @@ async def run_causality_agent(
     ticker: str,
     start_date: date,
     end_date: date,
+    detection_type: Optional[str] = None,
+    anomaly_meta: Optional[Dict[str, Any]] = None,
 ) -> CausalityAgentState:
-    """CausalityAgent 워크플로우 실행 진입점."""
+    """CausalityAgent 워크플로우 실행 진입점.
+
+    `detection_type` (KR6) 가 None 이면 "single_bar" fallback. 호출자가 명시하면
+    generate_hypotheses 노드가 type 별 프롬프트로 분기.
+    """
     initial: CausalityAgentState = {
         "ticker": ticker,
         "start_date": start_date,
         "end_date": end_date,
+        "detection_type": detection_type or "single_bar",
+        "anomaly_meta": anomaly_meta or {},
         "ohlcv_bars": [],
         "fred_series": [],
         "related_assets": [],
@@ -67,7 +76,10 @@ async def run_causality_agent(
         "errors": [],
     }
     logger.info("[CausalityAgent] ══════════════════════════════════════")
-    logger.info("[CausalityAgent] 시작: ticker=%s, 기간=%s ~ %s", ticker, start_date, end_date)
+    logger.info(
+        "[CausalityAgent] 시작: ticker=%s, 기간=%s ~ %s, type=%s",
+        ticker, start_date, end_date, initial["detection_type"],
+    )
     logger.info("[CausalityAgent] ══════════════════════════════════════")
     result = await _compiled.ainvoke(initial)
     mb = result.get("market_benchmark")
