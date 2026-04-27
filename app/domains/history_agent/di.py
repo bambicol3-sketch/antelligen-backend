@@ -35,8 +35,12 @@ from app.domains.dashboard.adapter.outbound.external.yahoo_finance_etf_holdings_
 from app.domains.dashboard.adapter.outbound.external.yahoo_finance_stock_client import (
     YahooFinanceStockClient,
 )
+from app.domains.causality_agent.adapter.outbound.external.gdelt_client import GdeltClient
 from app.domains.history_agent.adapter.outbound.curated_macro_events_adapter import (
     CuratedMacroEventsAdapter,
+)
+from app.domains.history_agent.adapter.outbound.external.gdelt_macro_news_adapter import (
+    GdeltMacroNewsAdapter,
 )
 from app.domains.history_agent.adapter.outbound.macro_context_adapter import (
     GprIndexAdapter,
@@ -117,6 +121,12 @@ def _curated_macro_events_port() -> CuratedMacroEventsAdapter:
     return CuratedMacroEventsAdapter()
 
 
+@lru_cache(maxsize=1)
+def _macro_news_search_port() -> GdeltMacroNewsAdapter:
+    # KR2-(3) — GDELT 키워드 검색을 history_agent 의 MacroNewsSearchPort 로 노출.
+    return GdeltMacroNewsAdapter(GdeltClient())
+
+
 def get_history_agent_usecase(
     db: AsyncSession = Depends(get_db),
     redis: aioredis.Redis = Depends(get_redis),
@@ -145,6 +155,7 @@ def get_history_agent_usecase(
         related_assets_port=_related_assets_port(),
         gpr_index_port=_gpr_index_port(),
         event_impact_repo=EventImpactMetricRepositoryImpl(db),
+        macro_news_search_port=_macro_news_search_port(),
     )
 
 

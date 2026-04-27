@@ -1,4 +1,5 @@
-"""KR1 + KR2 1·4단계 + KR3 — Type B 사유 추정 서비스 검증."""
+"""KR1 + KR2 5단계 + KR3 — Type B 사유 추정 서비스 검증."""
+import json
 from datetime import date
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -221,3 +222,169 @@ async def test_non_macro_events_unchanged():
     await enrich_type_b_reasons([corp], redis=None)
     assert corp.macro_type is None
     assert corp.reason is None
+
+
+# ── KR2-(2): ±7일 cross-ref (MEDIUM) ─────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_window_cross_ref_picks_closest_type_a_within_seven_days():
+    """같은 날 미매칭이면 가장 가까운 ±7일 Type A 로 채우고 MEDIUM 신뢰도."""
+    near_a = _make_macro("FOMC_RATE_DECISION", 10, title="연준 금리 인상")
+    far_a = _make_macro("CPI_RELEASE", 1, title="CPI 발표")
+    type_b = _make_macro("VIX_SPIKE", 12)  # near_a 와 2일 차, far_a 와 11일 차
+
+    await enrich_type_b_reasons([far_a, near_a, type_b], redis=None)
+
+    assert type_b.reason == "연준 금리 인상 2일 후 영향"
+    assert type_b.reason_confidence == "MEDIUM"
+    assert type_b.reason_evidence == "연준 금리 인상"
+
+
+@pytest.mark.asyncio
+async def test_window_cross_ref_skipped_when_outside_window():
+    """±7일 윈도우 초과면 cross-ref 미매칭 → LLM 단계 진입(여기선 cutoff skip)."""
+    far_a = _make_macro("CPI_RELEASE", 1, title="CPI 발표")
+    type_b = TimelineEvent(
+        title="VIX",
+        date=date(2030, 6, 15),  # cutoff 이후, far_a 와 6년 차
+        category="MACRO",
+        type="VIX_SPIKE",
+        detail="",
+        source="FRED",
+    )
+
+    llm_mock = MagicMock()
+    llm_mock.ainvoke = AsyncMock()
+    with patch(
+        "app.domains.history_agent.application.service.macro_reason_service.get_workflow_llm",
+        return_value=llm_mock,
+    ):
+        await enrich_type_b_reasons([far_a, type_b], redis=None)
+
+    # 윈도우 초과 + cutoff 이후 → reason None, LLM 미호출.
+    llm_mock.ainvoke.assert_not_called()
+    assert type_b.reason is None
+    assert type_b.reason_confidence is None
+
+
+@pytest.mark.asyncio
+async def test_same_day_takes_precedence_over_window():
+    """같은 날 Type A 가 있으면 ±7일 후보보다 우선(HIGH 유지)."""
+    same_day_a = _make_macro("FOMC_RATE_DECISION", 12, title="연준 금리 동결")
+    window_a = _make_macro("CPI_RELEASE", 10, title="CPI 발표")
+    type_b = _make_macro("VIX_SPIKE", 12)
+
+    await enrich_type_b_reasons([window_a, same_day_a, type_b], redis=None)
+
+    assert type_b.reason == "연준 금리 동결 영향"
+    assert type_b.reason_confidence == "HIGH"
+    assert type_b.reason_evidence == "연준 금리 동결"
+
+
+# ── KR2-(3): 뉴스 검색 (MEDIUM) ───────────────────────────────
+
+
+class _StubNewsPort:
+    """MacroNewsSearchPort 의 in-memory stub."""
+    def __init__(self, articles):
+        self._articles = articles
+        self.calls = []
+
+    async def search(self, keyword, start_date, end_date):
+        self.calls.append((keyword, start_date, end_date))
+        return self._articles
+
+
+@pytest.mark.asyncio
+async def test_news_search_fills_reason_with_first_article_title():
+    """cross-ref 미매칭이면 GDELT 뉴스 첫 article 의 title 을 reason 으로(MEDIUM)."""
+    type_b = _make_macro("VIX_SPIKE", 12)
+    news_port = _StubNewsPort([
+        {"title": "Fed signals hawkish stance amid sticky inflation",
+         "url": "https://example.com/fed-hawkish",
+         "date": "20240612", "source": "gdelt"},
+    ])
+
+    await enrich_type_b_reasons([type_b], redis=None, news_search_port=news_port)
+
+    assert type_b.reason == "Fed signals hawkish stance amid sticky inflation"
+    assert type_b.reason_confidence == "MEDIUM"
+    assert type_b.reason_evidence == "https://example.com/fed-hawkish"
+    # ±2일 윈도우로 호출됐는지 확인.
+    keyword, start, end = news_port.calls[0]
+    assert keyword == "stock market volatility VIX surge"
+    assert (end - start).days == 4
+
+
+@pytest.mark.asyncio
+async def test_news_search_empty_response_falls_through_to_llm():
+    """뉴스 검색이 빈 결과면 LLM 단계로 넘어간다."""
+    type_b = _make_macro("VIX_SPIKE", 12)
+    news_port = _StubNewsPort([])
+
+    llm_mock = MagicMock()
+    llm_mock.ainvoke = AsyncMock(
+        return_value=MagicMock(content='{"reason": "원인 미확인", "evidence": null}'),
+    )
+    with patch(
+        "app.domains.history_agent.application.service.macro_reason_service.get_workflow_llm",
+        return_value=llm_mock,
+    ):
+        await enrich_type_b_reasons([type_b], redis=None, news_search_port=news_port)
+
+    # 뉴스 미해결 → LLM 호출됨, LLM 미해결 → reason None.
+    assert llm_mock.ainvoke.called
+    assert type_b.reason is None
+
+
+@pytest.mark.asyncio
+async def test_news_search_skipped_when_keyword_missing():
+    """type 별 키워드 매핑이 없으면 뉴스 검색 자체 skip."""
+    type_b = TimelineEvent(
+        title="x", date=date(2024, 6, 12), category="MACRO",
+        type="UNKNOWN_REACTION_TYPE", detail="", source="FRED",
+    )
+    news_port = _StubNewsPort([{"title": "should not appear", "url": ""}])
+
+    await enrich_type_b_reasons([type_b], redis=None, news_search_port=news_port)
+
+    assert news_port.calls == []
+    # MACRO 분류 미정의이므로 macro_type=None → Type B 분류 자체에서 제외 → reason 채워지지 않음.
+    assert type_b.macro_type is None
+
+
+@pytest.mark.asyncio
+async def test_news_search_uses_url_as_evidence_with_title_fallback():
+    """url 이 비어있으면 title 자체를 evidence 로 사용."""
+    type_b = _make_macro("OIL_SPIKE", 12)
+    news_port = _StubNewsPort([
+        {"title": "OPEC+ surprise output cut", "url": "", "date": "20240612"},
+    ])
+
+    await enrich_type_b_reasons([type_b], redis=None, news_search_port=news_port)
+
+    assert type_b.reason == "OPEC+ surprise output cut"
+    assert type_b.reason_evidence == "OPEC+ surprise output cut"
+
+
+@pytest.mark.asyncio
+async def test_news_cache_hit_skips_external_call():
+    """Redis 캐시에 뉴스 응답이 있으면 port.search 미호출."""
+    type_b = _make_macro("VIX_SPIKE", 12)
+    cached_articles = [
+        {"title": "Cached headline", "url": "https://example.com/cache"},
+    ]
+    redis_mock = AsyncMock()
+    redis_mock.get = AsyncMock(
+        return_value=json.dumps(cached_articles).encode("utf-8"),
+    )
+    redis_mock.mget = AsyncMock(return_value=[None])  # LLM 캐시는 miss
+
+    news_port = _StubNewsPort([{"title": "should not appear", "url": ""}])
+
+    await enrich_type_b_reasons([type_b], redis=redis_mock, news_search_port=news_port)
+
+    assert news_port.calls == []
+    assert type_b.reason == "Cached headline"
+    assert type_b.reason_confidence == "MEDIUM"
