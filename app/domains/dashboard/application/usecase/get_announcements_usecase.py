@@ -26,7 +26,9 @@ _PERIOD_TO_DAYS: dict[str, int] = {
     "1Y": 365 * 20,
 }
 
-_KOREAN_TICKER_RE = re.compile(r"^\d{6}$")
+# yfinance 정규화 후 ticker 형식: "005930" / "005930.KS" / "005930.KQ" 모두 한국 종목.
+# router 가 normalize_yfinance_ticker 후 "005930.KS" 로 호출하므로 suffix 매칭 필수.
+_KOREAN_TICKER_RE = re.compile(r"^\d{6}(\.(KS|KQ))?$")
 
 
 def _is_korean_ticker(ticker: str) -> bool:
