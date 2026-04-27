@@ -34,7 +34,26 @@ _DEFAULT_WINDOW_MULTIPLIER = 1
 # HypothesisResult 스키마 버전. 새 필드 추가 시 bump 하여 기존 캐시를 자연 무효화한다.
 # v1: hypothesis + supporting_tools_called
 # v2: + confidence + layer + sources + evidence (KR2-(2)(3))
-_HYPOTHESIS_SCHEMA_VERSION = "v2"
+# v3: + detection_type 분기 (KR6) — 같은 봉의 type 별 분석 캐시 분리
+_HYPOTHESIS_SCHEMA_VERSION = "v3"
+
+# KR6 — 백엔드 detection_type 정규화. frontend 가 보내는 마커 type 을
+# causality_prompt_builder 가 인식하는 키로 매핑.
+_DETECTION_TYPE_TO_PROMPT_KEY: dict[str, str] = {
+    "zscore": "single_bar",
+    "cumulative_5d": "cumulative_5d_20d",
+    "cumulative_20d": "cumulative_5d_20d",
+    "drawdown_start": "drawdown_start",
+    "drawdown_recovery": "drawdown_recovery",
+    "trend": "trend",
+    "volatility_cluster": "volatility_cluster",
+}
+
+
+def _normalize_detection_type(raw: Optional[str]) -> str:
+    if not raw:
+        return "single_bar"
+    return _DETECTION_TYPE_TO_PROMPT_KEY.get(raw.lower(), "single_bar")
 
 
 class GetAnomalyCausalityUseCase:
@@ -55,11 +74,13 @@ class GetAnomalyCausalityUseCase:
         ticker: str,
         bar_date: date,
         chart_interval: Optional[str] = None,
+        detection_type: Optional[str] = None,
     ) -> AnomalyCausalityResponse:
-        # 캐시 키에 chart_interval 포함 — None 이면 빈 문자열 (backward compat)
+        # 캐시 키에 chart_interval + detection_type 포함 — 같은 봉의 다른 분석 분리.
         ci = (chart_interval or "").upper()
+        prompt_key = _normalize_detection_type(detection_type)
         detail_hash = compute_detail_hash(
-            f"{ticker}|{bar_date.isoformat()}|{ci}|{_HYPOTHESIS_SCHEMA_VERSION}"
+            f"{ticker}|{bar_date.isoformat()}|{ci}|{prompt_key}|{_HYPOTHESIS_SCHEMA_VERSION}"
         )
         key = (ticker, bar_date, ANOMALY_EVENT_TYPE, detail_hash)
 
@@ -105,6 +126,8 @@ class GetAnomalyCausalityUseCase:
                 ticker=ticker,
                 start_date=start_date,
                 end_date=end_date,
+                detection_type=prompt_key,
+                anomaly_meta={"raw_type": detection_type or ""},
             )
             hypotheses_raw = state.get("hypotheses", [])
         except Exception as exc:

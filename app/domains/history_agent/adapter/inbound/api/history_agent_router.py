@@ -429,6 +429,10 @@ async def get_anomaly_causality(
     chart_interval: Optional[str] = Query(
         None, alias="chartInterval", description="봉 단위(1D/1W/1M/1Q). lookback 윈도우 multiplier 적용 + 캐시 키 분리 (§13.4 D)",
     ),
+    detection_type: Optional[str] = Query(
+        None, alias="detectionType",
+        description="KR6 — 탐지 유형. zscore | cumulative_5d | cumulative_20d | drawdown_start | drawdown_recovery. 미지정 시 single_bar 프롬프트.",
+    ),
     usecase: GetAnomalyCausalityUseCase = Depends(get_anomaly_causality_usecase),
 ):
     """이상치 봉 1건의 causality(인과 가설)를 lazy-fetch한다.
@@ -439,7 +443,8 @@ async def get_anomaly_causality(
     ticker_norm = normalize_yfinance_ticker(ticker.upper())
     ci = normalize_chart_interval(chart_interval) if chart_interval else None
     result = await usecase.execute(
-        ticker=ticker_norm, bar_date=bar_date, chart_interval=ci,
+        ticker=ticker_norm, bar_date=bar_date,
+        chart_interval=ci, detection_type=detection_type,
     )
     return BaseResponse.ok(data=result)
 

@@ -3,6 +3,8 @@
 다층 탐지기:
 1. **z-score (기존)** — 봉 단위 adaptive threshold (k·σ + floor) 로 "이 봉이 평상시보다 특이한가"
 2. **cumulative window (KR2)** — 1D 에서 5/20일 누적 수익률 ±10/15% 임계 진입 봉
+3. **drawdown (KR3)** — 1D 에서 60봉 고점 대비 -10% 시작 / -3% 회복 변곡점
+4. **robust σ (KR4 디버그)** — settings.anomaly_robust_sigma_method 로 stable/mad 방식 swap
 
 - k: 2.5 공통 (표준편차 배수)
 - window: 봉 단위별 σ 추정 기간
@@ -11,9 +13,8 @@
 
 KR1 종목 군별 floor 우선순위 (1D 에만 적용):
 - KOSPI(`.KS`): 5%   / KOSDAQ(`.KQ`): 7%   / 그 외(미국 등): 5%
-미국 대/소형(S&P/Russell) 세분화는 시가총액 메타 인프라 필요해 보류.
 
-향후 follow-up: KR3 Drawdown / KR4 MAD 변동성 정규화 / KR5 변동성 클러스터.
+향후 follow-up: KR5 변동성 클러스터.
 """
 import logging
 import math
@@ -27,6 +28,7 @@ from app.domains.history_agent.application.response.anomaly_bar_response import 
     AnomalyBarResponse,
     AnomalyBarsResponse,
 )
+from app.infrastructure.config.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +80,16 @@ def _floor_pct_for(chart_interval: str, ticker: str, default: float) -> float:
 # 임계 이상으로 처음 진입한 봉만 마커 trigger — 빠져나간 후 재진입 시 재 트리거.
 _CUMULATIVE_5D_THRESHOLD = 0.10   # ±10%
 _CUMULATIVE_20D_THRESHOLD = 0.15  # ±15%
+
+# KR3 — Drawdown 변곡점 (1D 전용).
+# 60봉 고점 대비 -10% 첫 진입 → start, -3% 회복 → recovery. 같은 사이클에서 한 쌍.
+_DRAWDOWN_WINDOW = 60
+_DRAWDOWN_START_THRESHOLD = -0.10
+_DRAWDOWN_RECOVERY_THRESHOLD = -0.03
+
+# KR4 — robust σ 디버그 모드. stable filter A안의 안정 구간 임계값.
+_STABLE_RETURN_THRESHOLD = 0.03  # |r|<3% 만 σ 추정 입력
+_MAD_TO_SIGMA_FACTOR = 1.4826    # 정규분포 환산
 
 
 def _compute_returns(bars: List[StockBar]) -> list[float]:
@@ -140,10 +152,50 @@ def _cumulative_return(bars: List[StockBar], idx: int, n: int) -> Optional[float
     return round((bars[target_idx].close / base - 1.0) * 100.0, 4)
 
 
+def _compute_sigma(window_slice: list[float], method: str) -> float:
+    """KR4 — σ 추정 방식. method 별로 다른 알고리즘 사용.
+
+    "off"/"stdev"  — 기존 statistics.stdev (default)
+    "stable"       — 안정 구간(|r|<3%) 만 stdev 계산 (이상치 제외)
+    "mad"          — Median Absolute Deviation × 1.4826 (정규분포 환산)
+    """
+    if not window_slice:
+        return 0.0
+    if method == "stable":
+        stable = [r for r in window_slice if abs(r) < _STABLE_RETURN_THRESHOLD]
+        # 데이터 부족하면 fallback to stdev (변동성 자체가 큰 종목)
+        target = stable if len(stable) >= 30 else window_slice
+        try:
+            return statistics.stdev(target)
+        except statistics.StatisticsError:
+            return 0.0
+    if method == "mad":
+        try:
+            median = statistics.median(window_slice)
+            deviations = [abs(r - median) for r in window_slice]
+            mad = statistics.median(deviations)
+            return mad * _MAD_TO_SIGMA_FACTOR
+        except statistics.StatisticsError:
+            return 0.0
+    # "off" / "stdev" / 미정의 — 기존 stdev
+    try:
+        return statistics.stdev(window_slice)
+    except statistics.StatisticsError:
+        return 0.0
+
+
+def _resolve_sigma_method() -> str:
+    """settings 에서 robust σ method 읽기. 미정의 값은 'stdev' fallback."""
+    raw = (get_settings().anomaly_robust_sigma_method or "off").lower()
+    if raw in {"stable", "mad"}:
+        return raw
+    return "stdev"
+
+
 def _detect_zscore_anomalies(
     bars: List[StockBar], chart_interval: str, ticker: str,
 ) -> List[AnomalyBarResponse]:
-    """단일봉 z-score 탐지 (기존 로직 유지 + KR1 종목 군별 floor 적용)."""
+    """단일봉 z-score 탐지 (기존 로직 + KR1 종목 군별 floor + KR4 robust σ)."""
     params = _PARAMS_BY_INTERVAL.get(chart_interval)
     if params is None:
         raise ValueError(f"Unsupported chart_interval: {chart_interval!r}")
@@ -154,13 +206,11 @@ def _detect_zscore_anomalies(
     returns = _compute_returns(bars)
     candidates: list[tuple[int, float, float]] = []  # (idx, return_pct, z_score)
     floor_abs = _floor_pct_for(chart_interval, ticker, params.floor_pct) / 100.0
+    sigma_method = _resolve_sigma_method()
 
     for i in range(params.window, len(returns)):
         window_slice = returns[i - params.window: i]
-        try:
-            sigma = statistics.stdev(window_slice)
-        except statistics.StatisticsError:
-            sigma = 0.0
+        sigma = _compute_sigma(window_slice, sigma_method)
         if math.isnan(sigma) or sigma < 0:
             sigma = 0.0
 
@@ -190,6 +240,7 @@ def _detect_zscore_anomalies(
             cumulative_return_1d=_cumulative_return(bars, idx, 1),
             cumulative_return_5d=_cumulative_return(bars, idx, 5),
             cumulative_return_20d=_cumulative_return(bars, idx, 20),
+            sigma_method=sigma_method,
             causality=None,
         )
         for idx, ret_pct, z in top
@@ -273,35 +324,108 @@ def _detect_cumulative_anomalies(
     return events
 
 
+def _detect_drawdown_anomalies(
+    bars: List[StockBar], chart_interval: str,
+) -> List[AnomalyBarResponse]:
+    """KR3 — 60봉 고점 대비 Drawdown 변곡점 (1D 전용).
+
+    - drawdown_start: -10% 이하로 첫 진입한 봉. 같은 사이클에선 1번만 trigger.
+    - drawdown_recovery: drawdown 진행 중 -3% 이내로 회복한 봉. 사이클 종료.
+    한 사이클에서 시작-회복 마커 한 쌍이 일관되게 표시된다.
+    """
+    if chart_interval != "1D":
+        return []
+    if len(bars) <= _DRAWDOWN_WINDOW:
+        return []
+
+    events: List[AnomalyBarResponse] = []
+    in_drawdown = False  # 현재 -10% 이하 사이클 진행 중인지
+
+    for i in range(_DRAWDOWN_WINDOW, len(bars)):
+        # 60봉 high water mark (현재 봉 포함)
+        window_closes = [bars[j].close for j in range(i - _DRAWDOWN_WINDOW, i + 1)]
+        high = max(window_closes) if window_closes else 0.0
+        if high <= 0:
+            continue
+        drawdown = (bars[i].close - high) / high  # 음수(또는 0)
+
+        if not in_drawdown and drawdown <= _DRAWDOWN_START_THRESHOLD:
+            events.append(
+                AnomalyBarResponse(
+                    date=bars[i].bar_date,
+                    type="drawdown_start",
+                    return_pct=round(drawdown * 100.0, 4),
+                    z_score=0.0,
+                    direction="down",
+                    close=round(bars[i].close, 4),
+                    volume_ratio=_volume_ratio(bars, i, _DRAWDOWN_WINDOW),
+                    time_of_day=_time_of_day(bars, i, chart_interval),
+                    cumulative_return_1d=_cumulative_return(bars, i, 1),
+                    cumulative_return_5d=_cumulative_return(bars, i, 5),
+                    cumulative_return_20d=_cumulative_return(bars, i, 20),
+                    causality=None,
+                )
+            )
+            in_drawdown = True
+        elif in_drawdown and drawdown >= _DRAWDOWN_RECOVERY_THRESHOLD:
+            events.append(
+                AnomalyBarResponse(
+                    date=bars[i].bar_date,
+                    type="drawdown_recovery",
+                    return_pct=round(drawdown * 100.0, 4),
+                    z_score=0.0,
+                    direction="up",
+                    close=round(bars[i].close, 4),
+                    volume_ratio=_volume_ratio(bars, i, _DRAWDOWN_WINDOW),
+                    time_of_day=_time_of_day(bars, i, chart_interval),
+                    cumulative_return_1d=_cumulative_return(bars, i, 1),
+                    cumulative_return_5d=_cumulative_return(bars, i, 5),
+                    cumulative_return_20d=_cumulative_return(bars, i, 20),
+                    causality=None,
+                )
+            )
+            in_drawdown = False
+
+    return events
+
+
 def detect_anomalies(
     bars: List[StockBar], chart_interval: str, ticker: str = "",
 ) -> List[AnomalyBarResponse]:
     """순수 함수 — bars + interval + ticker → 이상치 봉 목록.
 
-    z-score 결과 + 누적 윈도우 결과를 dedup 정책에 따라 합쳐 반환:
-    - 같은 날에 z-score 와 누적이 모두 잡히면 **z-score 우선**(중복 마커 회피).
-    - 같은 날에 5일 누적과 20일 누적이 모두 잡히면 **20일 우선**(더 큰 패턴).
-    날짜 오름차순으로 정렬해 프론트 렌더 편의 확보.
+    z-score + 누적 + drawdown 결과를 dedup 정책에 따라 합쳐 반환:
+    - 같은 날 z-score 와 다른 type 충돌 → **z-score 우선**(중복 마커 회피)
+    - 같은 날 5일 누적 + 20일 누적 → **20일 우선**(더 큰 패턴)
+    - 같은 날 drawdown 마커는 z-score 가 없으면 통과 (drawdown 은 사이클 정보로 의미 큼)
+    날짜 오름차순 정렬.
 
     `ticker` default `""` 는 backward-compat — 종목 군 분류 없이 미국(US) fallback.
     """
     zscore_events = _detect_zscore_anomalies(bars, chart_interval, ticker)
     cumulative_events = _detect_cumulative_anomalies(bars, chart_interval)
+    drawdown_events = _detect_drawdown_anomalies(bars, chart_interval)
 
     by_date: Dict[object, AnomalyBarResponse] = {}
     # z-score 우선 → 먼저 채움.
     for ev in zscore_events:
         by_date[ev.date] = ev
-    # 20일 우선 → 5일 추가 후 20일 덮어쓰기 순서.
+    # 누적: 같은 날 z-score 가 있으면 skip, 없으면 저장. 5일 < 20일 우선.
     for ev in cumulative_events:
         if ev.date in by_date:
             existing = by_date[ev.date]
             if existing.type == "zscore":
-                continue  # z-score 우선 정책
+                continue
             if existing.type == "cumulative_5d" and ev.type == "cumulative_20d":
-                by_date[ev.date] = ev  # 20일 우선
+                by_date[ev.date] = ev
             continue
         by_date[ev.date] = ev
+    # Drawdown: 같은 날 z-score 가 있으면 skip(z-score 우선), 누적은 덮어쓰지 않음.
+    # drawdown 시작/회복은 사이클 시그널이라 누적 마커보다 의미상 우선이지만, 기존
+    # 마커 정책을 단순화 위해 누적 우선 정책 유지(향후 KR8 검증에서 분포 보고 조정).
+    for ev in drawdown_events:
+        if ev.date not in by_date:
+            by_date[ev.date] = ev
 
     merged = sorted(by_date.values(), key=lambda e: e.date)
     return merged
@@ -320,14 +444,16 @@ class DetectAnomalyBarsUseCase:
             ticker=ticker, chart_interval=chart_interval
         )
         events = detect_anomalies(bars, chart_interval, ticker)
-        zscore_n = sum(1 for e in events if e.type == "zscore")
-        cum5_n = sum(1 for e in events if e.type == "cumulative_5d")
-        cum20_n = sum(1 for e in events if e.type == "cumulative_20d")
+        counts = {
+            "zscore": sum(1 for e in events if e.type == "zscore"),
+            "cumulative_5d": sum(1 for e in events if e.type == "cumulative_5d"),
+            "cumulative_20d": sum(1 for e in events if e.type == "cumulative_20d"),
+            "drawdown_start": sum(1 for e in events if e.type == "drawdown_start"),
+            "drawdown_recovery": sum(1 for e in events if e.type == "drawdown_recovery"),
+        }
         logger.info(
-            "[DetectAnomalyBars] ticker=%s chart_interval=%s bars=%d anomalies=%d "
-            "(zscore=%d cumulative_5d=%d cumulative_20d=%d)",
-            ticker, chart_interval, len(bars), len(events),
-            zscore_n, cum5_n, cum20_n,
+            "[DetectAnomalyBars] ticker=%s chart_interval=%s bars=%d anomalies=%d %s",
+            ticker, chart_interval, len(bars), len(events), counts,
         )
         return AnomalyBarsResponse(
             ticker=ticker,

@@ -78,6 +78,12 @@ class CausalityAgentState(TypedDict):
     ticker: str
     start_date: date
     end_date: date
+    # KR6 — 탐지 유형. 가설 생성 프롬프트 분기에 사용.
+    # "single_bar"(default) | "cumulative_5d_20d" | "drawdown_start" | "drawdown_recovery"
+    # | "trend" | "volatility_cluster"
+    detection_type: str
+    # KR6 — 탐지 메타(향후 프롬프트 동적 컨텍스트 주입 용도). 현재 미사용.
+    anomaly_meta: Dict[str, Any]
 
     # ── gather_situation 노드 출력 ─────────────────────────────
     ohlcv_bars: List[OHLCVBar]

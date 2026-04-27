@@ -7,11 +7,18 @@ from pydantic import BaseModel
 class AnomalyBarResponse(BaseModel):
     """차트에 마커로 표시할 이상치 봉 1건.
 
-    - `type`: 탐지기 분류. KR2 다층 탐지에 추가됨.
-      "zscore"        — 단일봉 z-score (기존 ★)
-      "cumulative_5d" — 5거래일 누적 ±10% 진입 봉 (🔻)
-      "cumulative_20d"— 20거래일 누적 ±15% 진입 봉 (📉)
+    - `type`: 탐지기 분류. 다층 탐지로 확장됨.
+      "zscore"             — 단일봉 z-score (기존 ★)
+      "cumulative_5d"      — 5거래일 누적 ±10% 진입 봉 (🔻)
+      "cumulative_20d"     — 20거래일 누적 ±15% 진입 봉 (📉)
+      "drawdown_start"     — 60봉 고점 대비 -10% 첫 진입 봉 (🔽)
+      "drawdown_recovery"  — drawdown 구간에서 -3% 회복 봉 (🔼)
       backward-compat 위해 default "zscore".
+    - `sigma_method`: KR4 디버그 — z-score 계산에 사용한 σ 방식.
+      "stdev"  — 기존 statistics.stdev (default)
+      "stable" — 안정 구간(|r|<3%) stdev (이상치 제외)
+      "mad"    — Median Absolute Deviation × 1.4826
+      누적/Drawdown 탐지에선 None (z-score 무관).
     - `return_pct`: type 별 수익률(%). zscore=직전 봉 대비 / cumulative_*=N일 누적.
     - `z_score`: `(return_pct/100 - μ) / σ`. 누적 탐지에선 0.0 으로 채움(의미 없음).
     - `direction`: `"up"` | `"down"` — 프론트 색 구분.
@@ -36,6 +43,7 @@ class AnomalyBarResponse(BaseModel):
     cumulative_return_1d: Optional[float] = None
     cumulative_return_5d: Optional[float] = None
     cumulative_return_20d: Optional[float] = None
+    sigma_method: Optional[str] = None
     causality: Optional[str] = None
 
 
