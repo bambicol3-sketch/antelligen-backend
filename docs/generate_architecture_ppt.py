@@ -32,10 +32,10 @@ def set_bg(slide, color=DARK_BG):
     fill.fore_color.rgb = color
 
 
-def rect(slide, l, t, w, h, fill, line_color=None, line_width=None):
+def rect(slide, left, t, w, h, fill, line_color=None, line_width=None):
     from pptx.util import Pt as Pt2
     shape = slide.shapes.add_shape(
-        1, Inches(l), Inches(t), Inches(w), Inches(h)
+        1, Inches(left), Inches(t), Inches(w), Inches(h)
     )
     shape.fill.solid()
     shape.fill.fore_color.rgb = fill
@@ -47,11 +47,11 @@ def rect(slide, l, t, w, h, fill, line_color=None, line_width=None):
     return shape
 
 
-def txt(slide, text, l, t, w, h,
+def txt(slide, text, left, t, w, h,
         size=11, bold=False, color=WHITE,
         align=PP_ALIGN.LEFT, wrap=True):
     tb = slide.shapes.add_textbox(
-        Inches(l), Inches(t), Inches(w), Inches(h)
+        Inches(left), Inches(t), Inches(w), Inches(h)
     )
     tb.word_wrap = wrap
     tf = tb.text_frame
@@ -66,14 +66,14 @@ def txt(slide, text, l, t, w, h,
     return tb
 
 
-def arrow(slide, l, t, w, h, color=SUBTEXT, vertical=True):
+def arrow(slide, left, t, w, h, color=SUBTEXT, vertical=True):
     """Draw a simple arrow connector (rectangle + triangle head)."""
     if vertical:
-        rect(slide, l, t, w, h, color)
+        rect(slide, left, t, w, h, color)
         # arrowhead triangle via thin rect
-        rect(slide, l - w, t + h - 0.01, w * 3, 0.01, color)
+        rect(slide, left - w, t + h - 0.01, w * 3, 0.01, color)
     else:
-        rect(slide, l, t, w, h, color)
+        rect(slide, left, t, w, h, color)
 
 
 # ══════════════════════════════════════════════

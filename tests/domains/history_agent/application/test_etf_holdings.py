@@ -1,6 +1,5 @@
 """T2-2 Step 2 ETF holdings 분해: detail_hash constituent 포함 + constituent 필드 전파."""
 
-import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

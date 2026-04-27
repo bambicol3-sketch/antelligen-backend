@@ -5,10 +5,8 @@ EventEnrichmentRepository를 mock으로 대체하므로
 실제 DB 없이 즉시 실행된다.
 """
 import datetime
-from typing import List
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 
 from app.domains.history_agent.application.response.timeline_response import (
     HypothesisResult,

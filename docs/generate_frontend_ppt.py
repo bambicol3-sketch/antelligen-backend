@@ -32,11 +32,11 @@ def set_bg(slide):
     fill.fore_color.rgb = DARK_BG
 
 
-def tb(slide, text, l, t, w, h,
+def tb(slide, text, left, t, w, h,
        size=12, bold=False, color=None, align=PP_ALIGN.LEFT, wrap=True):
     if color is None:
         color = DARK_TEXT
-    box = slide.shapes.add_textbox(Inches(l), Inches(t), Inches(w), Inches(h))
+    box = slide.shapes.add_textbox(Inches(left), Inches(t), Inches(w), Inches(h))
     box.word_wrap = wrap
     tf = box.text_frame
     tf.word_wrap = wrap
@@ -50,8 +50,8 @@ def tb(slide, text, l, t, w, h,
     return box
 
 
-def rc(slide, l, t, w, h, fill):
-    s = slide.shapes.add_shape(1, Inches(l), Inches(t), Inches(w), Inches(h))
+def rc(slide, left, t, w, h, fill):
+    s = slide.shapes.add_shape(1, Inches(left), Inches(t), Inches(w), Inches(h))
     s.fill.solid()
     s.fill.fore_color.rgb = fill
     s.line.fill.background()
