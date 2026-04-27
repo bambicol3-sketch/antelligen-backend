@@ -36,6 +36,9 @@ from app.domains.history_agent.application.usecase.collect_important_macro_event
 from app.domains.history_agent.application.port.out.event_enrichment_repository_port import (
     EventEnrichmentRepositoryPort,
 )
+from app.domains.history_agent.application.port.out.macro_news_search_port import (
+    MacroNewsSearchPort,
+)
 from app.domains.history_agent.application.port.out.related_assets_port import (
     GprIndexPort,
     MacroContextEvent,
@@ -601,6 +604,7 @@ class HistoryAgentUseCase:
         related_assets_port: Optional[RelatedAssetsPort] = None,
         gpr_index_port: Optional[GprIndexPort] = None,
         event_impact_repo: Optional[EventImpactMetricRepositoryPort] = None,
+        macro_news_search_port: Optional[MacroNewsSearchPort] = None,
     ):
         self._stock_bars_port = stock_bars_port
         self._yfinance_corporate_port = yfinance_corporate_port
@@ -615,6 +619,7 @@ class HistoryAgentUseCase:
         self._related_assets_port = related_assets_port
         self._gpr_index_port = gpr_index_port
         self._event_impact_repo = event_impact_repo
+        self._macro_news_search_port = macro_news_search_port
         self._event_importance_service = EventImportanceService(enrichment_repo)
         self._event_classifier_service = EventClassifierService(enrichment_repo)
 
@@ -847,10 +852,16 @@ class HistoryAgentUseCase:
         if enrich_titles:
             # 타이틀 먼저 채우고 사유 추정 — Type A cross-ref evidence 가 자연어 타이틀을 참조하기 위함.
             await enrich_macro_titles(timeline, redis=self._redis)
-            await enrich_type_b_reasons(timeline, redis=self._redis)
+            await enrich_type_b_reasons(
+                timeline, redis=self._redis,
+                news_search_port=self._macro_news_search_port,
+            )
         else:
             # 타이틀 미보강이어도 분류 + cross-ref 만이라도 적용. cutoff 이후 LLM 호출은 자동 skip.
-            await enrich_type_b_reasons(timeline, redis=self._redis)
+            await enrich_type_b_reasons(
+                timeline, redis=self._redis,
+                news_search_port=self._macro_news_search_port,
+            )
 
         await self._save_enrichments(ticker, new_events)
 
@@ -958,7 +969,10 @@ class HistoryAgentUseCase:
             )
 
         # MACRO 사유 추정은 타이틀 생성 이후 단독 호출 — cross-ref evidence 가 자연어 타이틀 참조.
-        await enrich_type_b_reasons(timeline, redis=self._redis)
+        await enrich_type_b_reasons(
+            timeline, redis=self._redis,
+            news_search_port=self._macro_news_search_port,
+        )
 
         await self._save_enrichments(ticker, new_events)
 
