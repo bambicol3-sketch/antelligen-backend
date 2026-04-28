@@ -62,6 +62,59 @@ async def test_fetch_filters_by_region_includes_global(seed_file: Path):
     assert len(events) == 2
 
 
+@pytest.fixture
+def seed_with_global_commodity(tmp_path: Path) -> Path:
+    """글로벌 commodity / 지정학 이벤트가 KR 요청에서도 노출되는지 검증용 seed."""
+    data = [
+        {
+            "date": "2014-12-16",
+            "event_type": "GEOPOLITICAL",
+            "region": "GLOBAL",
+            "title": "러시아 루블 위기",
+            "detail": "CBR 한밤중 17% 인상",
+            "tags": ["geopolitical", "fx"],
+            "importance_score": 0.9,
+        },
+        {
+            "date": "2022-09-28",
+            "event_type": "CRISIS",
+            "region": "KR",
+            "title": "레고랜드 ABCP",
+            "detail": "한국 신용경색",
+            "tags": ["credit"],
+            "importance_score": 0.85,
+        },
+        {
+            "date": "2024-04-01",
+            "event_type": "COMMODITY",
+            "region": "GLOBAL",
+            "title": "OPEC+ 추가 감산 결정",
+            "detail": "원유 시장 글로벌 영향",
+            "tags": ["oil", "commodity"],
+            "importance_score": 0.8,
+        },
+    ]
+    path = tmp_path / "seed_global_commodity.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    _load_catalog.cache_clear()
+    return path
+
+
+@pytest.mark.asyncio
+async def test_fetch_kr_includes_global_commodities_and_geopolitical(seed_with_global_commodity: Path):
+    """region=KR 사용자도 GLOBAL 태그 commodity/지정학 이벤트를 받아야 한다 (P3-6)."""
+    adapter = CuratedMacroEventsAdapter(seed_path=seed_with_global_commodity)
+    events = await adapter.fetch(
+        region="KR",
+        start_date=datetime.date(2014, 1, 1),
+        end_date=datetime.date(2025, 1, 1),
+    )
+    # KR(레고랜드) + GLOBAL 2건(루블 위기 + OPEC) = 3건
+    titles = sorted(e.title for e in events)
+    assert titles == ["OPEC+ 추가 감산 결정", "러시아 루블 위기", "레고랜드 ABCP"]
+    assert {e.region for e in events} == {"KR", "GLOBAL"}
+
+
 @pytest.mark.asyncio
 async def test_fetch_region_global_returns_all_in_range(seed_file: Path):
     adapter = CuratedMacroEventsAdapter(seed_path=seed_file)
