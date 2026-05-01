@@ -18,7 +18,7 @@ class StockThemeItem:
 class ContextBuilder:
     @staticmethod
     def build(keywords: List[KeywordItem], stock_themes: List[StockThemeItem]) -> str:
-        lines = ["=== 최근 방산 키워드 동향 ==="]
+        lines = ["=== 최근 주식 키워드 동향 ==="]
         if keywords:
             for kw in keywords[:20]:
                 lines.append(f"- {kw.keyword}: {kw.count}회 언급")
@@ -26,7 +26,7 @@ class ContextBuilder:
             lines.append("(키워드 데이터 없음)")
 
         lines.append("")
-        lines.append("=== 방산 종목/테마 데이터 ===")
+        lines.append("=== 종목/테마 데이터 ===")
         if stock_themes:
             for st in stock_themes:
                 themes_str = ", ".join(st.themes) if st.themes else "없음"
