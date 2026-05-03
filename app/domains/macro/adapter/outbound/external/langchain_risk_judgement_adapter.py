@@ -19,11 +19,11 @@ _CONTEXTUAL_INSTRUCTIONS = (
     "기관 투자자에게 전달되는 프리미엄 인사이트입니다.\n"
     "답변은 실제 전문 애널리스트가 설명하듯 정중하고 신뢰감 있는 한국어 존댓말 문장으로 작성합니다.\n"
     "인용 문구가 아닌 자연스러운 설명체를 사용하되 과장하지 않습니다.\n"
-    "reasons 배열은 한국어 문장으로 최대 3줄 이내이며 각 문장은 한 줄로 간결합니다.\n"
+    "reasons 배열은 한국어 문장으로 최대 6줄 이내이며 각 문장은 한 줄로 간결합니다.\n"
     "\n"
     "문장 구성 원칙 (매우 중요):\n"
     "- 현황판 상단에 이미 Risk-on / Risk-off 상태 배지가 크게 표시됩니다. "
-    "  따라서 reasons 3줄은 결론(Risk-on / Risk-off / 리스크온 / 리스크오프 / '기울기가 있다' "
+    "  따라서 reasons 6줄은 결론(Risk-on / Risk-off / 리스크온 / 리스크오프 / '기울기가 있다' "
     "  '우위입니다' 같은 상태 단정 표현)을 **절대 반복하지 마십시오**.\n"
     "- 각 줄은 사용자에게 새로운 실질 정보(드라이버·지표·수급·지정학·포지셔닝 등)를 제공해야 합니다. "
     "  결론 요약 문장으로 소중한 한 줄을 낭비하지 마십시오.\n"
@@ -41,7 +41,7 @@ _CONTEXTUAL_INSTRUCTIONS = (
     "  '유튜브', '채널', '학습 노트', '노트는', '컨텐츠', '저자', '발표자', '리서치 보고서'.\n"
     "- 분석 근거는 항상 1인칭 기관 화법 — '내부 매크로 엔진', '저희 매크로 데스크', "
     "  '거시 지표', '크로스에셋 시그널', '한국 시장 데이터' — 으로만 표현합니다.\n"
-    "- 'Antelligen AI' 라는 브랜드명은 3문장 전체에서 **최대 1회**만 등장할 수 있습니다. "
+    "- 'Antelligen AI' 라는 브랜드명은 6문장 전체에서 **최대 1회**만 등장할 수 있습니다. "
     "  자연스럽지 않다면 아예 언급하지 않아도 됩니다. 두 번 이상 언급은 절대 금지합니다.\n"
     "\n"
     "\n"
@@ -69,14 +69,14 @@ _CONTEXTUAL_INSTRUCTIONS = (
 )
 
 # baseline 은 JSON/스키마 강제 없이, Antelligen AI 매크로 데스크 소속 시니어 애널리스트
-# (월가 최상위 IB 수준의 전문성) 페르소나로 3문장 답변을 받는다.
+# (월가 최상위 IB 수준의 전문성) 페르소나로 6문장 답변을 받는다.
 _BASELINE_INSTRUCTIONS = (
     "당신은 글로벌 매크로·크로스에셋 전략 데스크의 시니어 애널리스트입니다. "
     "월가 최상위 IB(Goldman Sachs GIR, Morgan Stanley Research, JPMorgan, BlackRock II) "
     "수준의 프레임으로 기관 투자자에게 데일리 리스크 브리핑을 하는 톤을 유지합니다.\n"
     "\n"
     "필수 규칙:\n"
-    "1) 포맷: 정확히 3문장, 각 한 줄, 문장 사이는 개행 하나. 번호·불릿·마크다운·코드펜스·따옴표 금지.\n"
+    "1) 포맷: 정확히 6문장, 각 한 줄, 문장 사이는 개행 하나. 번호·불릿·마크다운·코드펜스·따옴표 금지.\n"
     "2) 문장 구성: ① 가장 강한 드라이버(유동성·연준 경로·실질금리·2s10s·DXY·크레딧 스프레드·"
     "   브렉이븐·VIX·지정학·실적 모멘텀·외국인 수급·크로스에셋 로테이션 등 구체적 채널) → "
     "   ② 이를 교차 확인·보완하는 다른 지표·시그널 → ③ 반증 시그널(invalidation) 또는 "
@@ -89,7 +89,7 @@ _BASELINE_INSTRUCTIONS = (
     "   '학습 노트', '참고 영상', '학습 컨텐츠' 같은 내부 용어를 직접·간접적으로 노출 금지. "
     "   특히 '영상', '참고 영상', '일부 영상', '여러 영상', '영상은', '영상에서는', "
     "   '유튜브', '채널', '학습 노트', '노트는', '컨텐츠', '저자', '발표자' 같은 단어는 "
-    "   어떤 문맥에서도 본문에 등장시키지 마십시오. 'Antelligen AI' 브랜드는 3문장 통틀어 "
+    "   어떤 문맥에서도 본문에 등장시키지 마십시오. 'Antelligen AI' 브랜드는 6문장 통틀어 "
     "   최대 1회만, 자연스럽지 않으면 생략 — 2회 이상은 절대 금지. 그 외에는 '내부 매크로 "
     "   엔진', '저희 매크로 데스크', '크로스에셋 시그널', '거시 데이터' 같은 1인칭 기관 화법 사용.\n"
     "5) 시장 용어: VIX, DXY, 2s10s, ERP, 크레딧 스프레드, ISM, CPI, PCE, WTI, EM FX 등 "
@@ -108,12 +108,12 @@ _BASELINE_QUESTION = "지금 시장이 risk on이니 off니?"
 _ALIGNMENT_SUFFIX = (
     "\n\n중요(통합 정렬): 내부 매크로 엔진이 오늘 시장을 이미 "
     "'{aligned_label}' 으로 확정 판단하였습니다. 당신은 이 결론과 정합하는 방향으로 "
-    "3문장의 전문가 견해를 서술하되, 절대 결론을 반대 극으로 뒤집지 마십시오.\n"
+    "6문장의 전문가 견해를 서술하되, 절대 결론을 반대 극으로 뒤집지 마십시오.\n"
     "단, 현황판 상단에 이미 '{aligned_label}' 배지가 표시되므로 "
     "문장에서 결론(예: 'Risk-on 입니다', 'Risk-off 로 판단됩니다', '시장은 {aligned_label} 쪽에 "
     "기울기가 있습니다' 등)을 반복 선언하지 마십시오. 세 문장 모두 새로운 실질 정보 — "
     "가장 강한 드라이버, 교차 확인 시그널, 반증 조건 및 포지셔닝 — 로 채웁니다.\n"
-    "'Antelligen AI' 브랜드명은 전체 3문장에서 최대 1회까지만 등장시키고, 자연스럽지 않다면 언급하지 않아도 됩니다.\n"
+    "'Antelligen AI' 브랜드명은 전체 6문장에서 최대 1회까지만 등장시키고, 자연스럽지 않다면 언급하지 않아도 됩니다.\n"
 )
 
 _ALIGNMENT_LABELS = {
@@ -151,7 +151,7 @@ def _build_contextual_input(reference_date: date, note_context: str, video_conte
         f"[학습 노트]\n{note_context}\n\n"
         f"[최근 7일 참고 영상]\n{video_context}\n\n"
         "질문: 오늘 기준 한국 시장은 Risk-on 인가요, Risk-off 인가요? "
-        "3줄 이내 근거와 함께 JSON 으로만 답변하십시오."
+        "6줄 이내 근거와 함께 JSON 으로만 답변하십시오."
     )
 
 
@@ -296,7 +296,7 @@ class LangChainRiskJudgementAdapter(RiskJudgementLlmPort):
                 line = str(item).strip()
                 if line:
                     reasons.append(line)
-        return RiskJudgementResult(status=status, reasons=reasons[:3])
+        return RiskJudgementResult(status=status, reasons=reasons[:6])
 
     @staticmethod
     def _parse_baseline(raw: str) -> RiskJudgementResult:
@@ -310,7 +310,7 @@ class LangChainRiskJudgementAdapter(RiskJudgementLlmPort):
             sentences = re.split(r"(?<=[다요죠니까])\.\s+|(?<=[다요죠니까])\.\n|\.(?=\s|$)", text)
             lines = [s.strip() for s in sentences if s and s.strip()]
 
-        lines = [re.sub(r"^[0-9]+[\.\)]\s*", "", ln) for ln in lines][:3]
+        lines = [re.sub(r"^[0-9]+[\.\)]\s*", "", ln) for ln in lines][:6]
 
         status = RiskStatus.UNKNOWN
         joined = text.lower()
