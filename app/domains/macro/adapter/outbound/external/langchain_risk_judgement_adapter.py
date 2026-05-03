@@ -19,11 +19,11 @@ _CONTEXTUAL_INSTRUCTIONS = (
     "기관 투자자에게 전달되는 프리미엄 인사이트입니다.\n"
     "답변은 실제 전문 애널리스트가 설명하듯 정중하고 신뢰감 있는 한국어 존댓말 문장으로 작성합니다.\n"
     "인용 문구가 아닌 자연스러운 설명체를 사용하되 과장하지 않습니다.\n"
-    "reasons 배열은 한국어 문장으로 최대 6줄 이내이며 각 문장은 한 줄로 간결합니다.\n"
+    "reasons 배열은 한국어 문장으로 최대 3줄 이내이며 각 문장은 한 줄로 간결합니다.\n"
     "\n"
     "문장 구성 원칙 (매우 중요):\n"
     "- 현황판 상단에 이미 Risk-on / Risk-off 상태 배지가 크게 표시됩니다. "
-    "  따라서 reasons 6줄은 결론(Risk-on / Risk-off / 리스크온 / 리스크오프 / '기울기가 있다' "
+    "  따라서 reasons 3줄은 결론(Risk-on / Risk-off / 리스크온 / 리스크오프 / '기울기가 있다' "
     "  '우위입니다' 같은 상태 단정 표현)을 **절대 반복하지 마십시오**.\n"
     "- 각 줄은 사용자에게 새로운 실질 정보(드라이버·지표·수급·지정학·포지셔닝 등)를 제공해야 합니다. "
     "  결론 요약 문장으로 소중한 한 줄을 낭비하지 마십시오.\n"
@@ -41,7 +41,7 @@ _CONTEXTUAL_INSTRUCTIONS = (
     "  '유튜브', '채널', '학습 노트', '노트는', '컨텐츠', '저자', '발표자', '리서치 보고서'.\n"
     "- 분석 근거는 항상 1인칭 기관 화법 — '내부 매크로 엔진', '저희 매크로 데스크', "
     "  '거시 지표', '크로스에셋 시그널', '한국 시장 데이터' — 으로만 표현합니다.\n"
-    "- 'Antelligen AI' 라는 브랜드명은 6문장 전체에서 **최대 1회**만 등장할 수 있습니다. "
+    "- 'Antelligen AI' 라는 브랜드명은 3문장 전체에서 **최대 1회**만 등장할 수 있습니다. "
     "  자연스럽지 않다면 아예 언급하지 않아도 됩니다. 두 번 이상 언급은 절대 금지합니다.\n"
     "\n"
     "\n"
@@ -151,7 +151,7 @@ def _build_contextual_input(reference_date: date, note_context: str, video_conte
         f"[학습 노트]\n{note_context}\n\n"
         f"[최근 7일 참고 영상]\n{video_context}\n\n"
         "질문: 오늘 기준 한국 시장은 Risk-on 인가요, Risk-off 인가요? "
-        "6줄 이내 근거와 함께 JSON 으로만 답변하십시오."
+        "3줄 이내 근거와 함께 JSON 으로만 답변하십시오."
     )
 
 
@@ -296,7 +296,7 @@ class LangChainRiskJudgementAdapter(RiskJudgementLlmPort):
                 line = str(item).strip()
                 if line:
                     reasons.append(line)
-        return RiskJudgementResult(status=status, reasons=reasons[:6])
+        return RiskJudgementResult(status=status, reasons=reasons[:3])
 
     @staticmethod
     def _parse_baseline(raw: str) -> RiskJudgementResult:

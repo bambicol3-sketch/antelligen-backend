@@ -97,7 +97,7 @@ class JudgeMarketRiskUseCase:
                 "유보하였습니다. 현재 화면에는 Antelligen AI 매크로 데스크의 일반 견해만 노출됩니다."
             )
 
-        contextual_reasons_top = contextual_reasons[:6]
+        contextual_reasons_top = contextual_reasons[:3]
         baseline_reasons_top = baseline_reasons[:6]
         combined_reasons = list(baseline_reasons_top) + list(contextual_reasons_top)
 
