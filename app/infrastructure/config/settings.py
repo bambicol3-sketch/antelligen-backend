@@ -23,6 +23,15 @@ class Settings(BaseSettings):
     serp_api_key: str = ""
     youtube_api_key: str = ""
 
+    # ddakjubu / ddakjubu2 (study_room 영역) — 학습 파이프라인 설정
+    ddakjubu_llm_model: str = "gpt-5-mini"
+    ddakjubu_md_path: str = "ddakjubu.md"
+    ddakjubu2_llm_model: str = "gpt-5-mini"
+    ddakjubu2_md_path: str = "ddakjubu2.md"
+    ddakjubu2_enhanced_md_path: str = "ddakjubu2_enhanced.md"
+    ddakjubu2_enhance_sleep_seconds: int = 600
+    ddakjubu2_enhance_published_after_iso: str = "2026-01-01T00:00:00+00:00"
+
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
 

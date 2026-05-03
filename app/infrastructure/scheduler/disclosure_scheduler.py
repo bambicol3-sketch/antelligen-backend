@@ -26,6 +26,7 @@ from app.infrastructure.scheduler.macro_jobs import job_refresh_market_risk
 from app.infrastructure.scheduler.smart_money_jobs import job_collect_investor_flow, job_collect_global_portfolio, job_collect_kr_portfolio
 from app.infrastructure.scheduler.macro_timeline_jobs import job_warmup_macro_timeline
 from app.infrastructure.scheduler.corp_earnings_jobs import job_refresh_corp_earnings
+from app.infrastructure.scheduler.ddakjubu2_jobs import job_learn_ddakjubu2_videos
 
 logger = logging.getLogger(__name__)
 
@@ -236,8 +237,20 @@ def create_disclosure_scheduler() -> AsyncIOScheduler:
         misfire_grace_time=3600,
     )
 
+    # Daily 05:00 KST — learn newly added ddakjubu2 (딱주부TV) videos and update ddakjubu2.md
+    scheduler.add_job(
+        job_learn_ddakjubu2_videos,
+        trigger=CronTrigger(hour=5, minute=0, timezone=KST),
+        id="learn_ddakjubu2_videos",
+        name="Learn ddakjubu2 videos (daily 05:00 KST)",
+        replace_existing=True,
+        misfire_grace_time=3600,
+        max_instances=1,
+        coalesce=True,
+    )
+
     logger.info(
-        "Disclosure scheduler configured (13 jobs: 2 hourly, 8 daily, 1 monthly, "
+        "Disclosure scheduler configured (14 jobs: 2 hourly, 9 daily, 1 monthly, "
         "1 quarterly+weekly, 3 seasonal)"
     )
     return scheduler
