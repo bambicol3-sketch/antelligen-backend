@@ -55,6 +55,10 @@ import app.domains.stock.market_data.infrastructure.orm.event_impact_metric_orm 
 import app.domains.smart_money.infrastructure.orm.investor_flow_orm  # noqa: F401
 import app.domains.smart_money.infrastructure.orm.global_portfolio_orm  # noqa: F401
 import app.domains.smart_money.infrastructure.orm.kr_portfolio_orm  # noqa: F401
+import app.domains.study_room.infrastructure.orm.dashboard_snapshot_orm  # noqa: F401
+import app.domains.mse_market_analysis.infrastructure.orm.market_analysis_snapshot_orm  # noqa: F401
+import app.domains.mse_sectors.infrastructure.orm.sectors_snapshot_orm  # noqa: F401
+import app.domains.mse_credit.infrastructure.orm.credit_snapshot_orm  # noqa: F401
 
 setup_logging()
 configure_langsmith()
