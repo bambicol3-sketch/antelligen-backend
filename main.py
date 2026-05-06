@@ -93,6 +93,13 @@ async def _try_restore_macro_snapshot(max_age_hours: int) -> bool:
         if datetime.now() - updated_at > timedelta(hours=max_age_hours):
             return False
         response = MarketRiskJudgementResponse.model_validate(payload["response"])
+        # UNKNOWN 스냅샷은 LLM 실패의 흔적이라 복원 가치가 없다.
+        # 복원을 스킵하면 lifespan 이 새 배치(job_refresh_market_risk)를 돌려 정상 판단 시도.
+        if response.status == "UNKNOWN":
+            logging.getLogger(__name__).info(
+                "[Startup] Redis 매크로 스냅샷이 UNKNOWN 이라 복원 스킵 — 새 배치를 실행합니다."
+            )
+            return False
         get_market_risk_snapshot_store().set(response, updated_at=updated_at)
         return True
     except Exception as e:

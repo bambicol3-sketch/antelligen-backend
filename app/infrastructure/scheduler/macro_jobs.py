@@ -42,8 +42,23 @@ async def job_refresh_market_risk() -> None:
             llm_port=llm_adapter,
         ).execute()
 
+        store = get_market_risk_snapshot_store()
+
+        # LLM 타임아웃/파싱 실패 등으로 UNKNOWN 이 떨어진 경우 직전 정상 스냅샷을
+        # 덮어쓰지 않는다. 직전 스냅샷이 없으면(콜드 스타트) 어쩔 수 없이 UNKNOWN 저장.
+        if response.status == "UNKNOWN":
+            existing = store.get()
+            if existing is not None:
+                print(
+                    f"[macro.job] ⚠ LLM 결과 UNKNOWN — 기존 스냅샷 유지 "
+                    f"(prev_status={existing.response.status}, "
+                    f"prev_updated_at={existing.updated_at.isoformat()})"
+                )
+                return
+            print("[macro.job] ⚠ LLM 결과 UNKNOWN + 직전 스냅샷 없음 — 콜드 스타트로 UNKNOWN 저장")
+
         updated_at = datetime.now()
-        get_market_risk_snapshot_store().set(response, updated_at=updated_at)
+        store.set(response, updated_at=updated_at)
         await _persist_snapshot_to_redis(response, updated_at)
         print(
             f"[macro.job] ✅ 스냅샷 갱신 완료 status={response.status} "
