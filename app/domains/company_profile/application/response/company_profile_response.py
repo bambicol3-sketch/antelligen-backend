@@ -6,6 +6,13 @@ from app.domains.company_profile.domain.entity.company_profile import CompanyPro
 from app.domains.company_profile.domain.value_object.business_overview import BusinessOverview
 
 
+class RevenueSegmentResponse(BaseModel):
+    """사업부문별 매출 비중 — 파이 차트 데이터."""
+
+    name: str
+    percent: float
+
+
 class CompanyProfileResponse(BaseModel):
     corp_code: str
     corp_name: str
@@ -29,6 +36,7 @@ class CompanyProfileResponse(BaseModel):
     asset_type: str = "EQUITY"  # "EQUITY" | "INDEX" | "ETF"
     business_summary: Optional[str] = None
     main_revenue_sources: list[str] = Field(default_factory=list)
+    revenue_segments: list[RevenueSegmentResponse] = Field(default_factory=list)
     overview_source: Optional[str] = None  # "rag_summary" | "llm_only" | "asset_llm_only" | None
     founding_story: Optional[str] = None
     business_model: Optional[str] = None
@@ -61,6 +69,11 @@ class CompanyProfileResponse(BaseModel):
             asset_type=profile.asset_type,
             business_summary=overview.summary if overview else None,
             main_revenue_sources=list(overview.revenue_sources) if overview else [],
+            revenue_segments=(
+                [RevenueSegmentResponse(name=s.name, percent=s.percent)
+                 for s in overview.revenue_segments]
+                if overview else []
+            ),
             overview_source=overview.source if overview else None,
             founding_story=overview.founding_story if overview else None,
             business_model=overview.business_model if overview else None,
