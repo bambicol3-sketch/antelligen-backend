@@ -7,7 +7,10 @@ from openai import AsyncOpenAI
 from app.domains.company_profile.application.port.out.business_overview_port import (
     BusinessOverviewPort,
 )
-from app.domains.company_profile.domain.value_object.business_overview import BusinessOverview
+from app.domains.company_profile.domain.value_object.business_overview import (
+    BusinessOverview,
+    RevenueSegment,
+)
 from app.infrastructure.config.settings import get_settings
 
 logger = logging.getLogger(__name__)
@@ -19,6 +22,13 @@ _SYSTEM_PROMPT = """당신은 한국 상장기업 분석가입니다.
 - summary 는 2~3 문장. 무엇을 만들고/판매하는 회사인지 핵심만.
 - revenue_sources 는 3~5 개의 짧은 항목 (예: "DRAM 메모리", "스마트폰 사업", "콘텐츠 IP 라이선싱").
 - 각 항목은 15자 이내, 비중·연도·수치는 빼고 사업 부문/제품/서비스명만.
+- revenue_segments 는 사업부문별 매출 비중 (파이 차트 시각화용).
+  - 사업보고서 발췌에 매출 구성/사업부문별 비중이 명시되어 있으면 그 수치 그대로 사용.
+  - 사업보고서에 없으면 LLM 일반 지식으로 추정하되 사실 기반 수치만, 모르면 빈 배열.
+  - 각 항목: {"name": "<15자 이내 부문명>", "percent": <0보다 크고 100 이하 숫자>}.
+  - 합계는 100% 근사 (기타/조정으로 100 미만 허용). 100 초과 금지.
+  - 보통 3~7개 항목. 비중 1% 미만 미세 부문은 "기타"로 묶어도 OK.
+  - 부문명은 revenue_sources 와 일관되게.
 - founding_story 는 2~3 문장으로 회사의 창업 배경·초기 비전. 사실 기반으로만 작성. 알려진 사실이 없으면 빈 문자열.
 - business_model 은 2~3 문장으로 어떻게 수익을 내는지·핵심 가치 제안. 알려진 사실이 없으면 빈 문자열.
 - 추측 금지. 마크다운 금지. 반드시 아래 JSON 형식만 반환.
@@ -27,6 +37,10 @@ _SYSTEM_PROMPT = """당신은 한국 상장기업 분석가입니다.
 {
   "summary": "<2~3 문장 한국어 사업 요약>",
   "revenue_sources": ["<항목1>", "<항목2>", "..."],
+  "revenue_segments": [
+    {"name": "<부문1>", "percent": <숫자>},
+    {"name": "<부문2>", "percent": <숫자>}
+  ],
   "founding_story": "<창업 배경 2~3 문장 또는 빈 문자열>",
   "business_model": "<비즈니스 모델 2~3 문장 또는 빈 문자열>"
 }
@@ -97,12 +111,15 @@ class OpenAIBusinessOverviewClient(BusinessOverviewPort):
         sources = data.get("revenue_sources") or []
         revenue_sources = [s.strip() for s in sources if isinstance(s, str) and s.strip()][:5]
 
+        revenue_segments = _parse_revenue_segments(data.get("revenue_segments"))
+
         founding_story = _coerce_optional_text(data.get("founding_story"))
         business_model = _coerce_optional_text(data.get("business_model"))
 
         return BusinessOverview(
             summary=summary,
             revenue_sources=revenue_sources,
+            revenue_segments=revenue_segments,
             source=source,
             founding_story=founding_story,
             business_model=business_model,
@@ -160,6 +177,44 @@ def _coerce_optional_text(value) -> Optional[str]:
         return None
     stripped = value.strip()
     return stripped or None
+
+
+def _parse_revenue_segments(raw) -> list[RevenueSegment]:
+    """LLM 응답의 revenue_segments 배열을 RevenueSegment 리스트로 변환.
+
+    잘못된 entry(타입·범위 위반)는 자동 drop. 합계 100 초과 시 비례 정규화.
+    상위 10개까지만 유지.
+    """
+    if not isinstance(raw, list):
+        return []
+
+    parsed: list[RevenueSegment] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name")
+        percent = item.get("percent")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        if not isinstance(percent, (int, float)):
+            continue
+        pct = float(percent)
+        if pct <= 0 or pct > 100:
+            continue
+        parsed.append(RevenueSegment(name=name.strip()[:30], percent=round(pct, 2)))
+
+    parsed.sort(key=lambda s: s.percent, reverse=True)
+    parsed = parsed[:10]
+
+    total = sum(s.percent for s in parsed)
+    if total > 100.5:  # 약간의 오버슛은 그대로 — 명백한 오류만 정규화
+        factor = 100.0 / total
+        parsed = [
+            RevenueSegment(name=s.name, percent=round(s.percent * factor, 2))
+            for s in parsed
+        ]
+
+    return parsed
 
 
 def _build_user_prompt(
