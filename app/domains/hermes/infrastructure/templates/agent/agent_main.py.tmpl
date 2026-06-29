@@ -1,0 +1,100 @@
+"""
+{{PACKAGE_NAME}} — Antelligen 사내 업무 자동화 에이전트
+(Anthropic Python SDK tool runner 기반 / 사내 LLM 게이트웨이 연결)
+
+실행:
+    python agent_main.py "수행할 작업 설명"
+    (인자 없이 실행하면 대화형으로 작업을 입력받습니다.)
+
+LLM 연결:
+    사내 LLM 게이트웨이로 향하는 Anthropic 호환 엔드포인트를 .env 의
+    ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN 으로 지정합니다.
+    (OpenAI 호환 게이트웨이면 Anthropic→OpenAI 변환 프록시 경유 — ENVIRONMENT_SETUP.md 참조)
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+try:
+    import anthropic
+except ImportError:
+    sys.exit("anthropic 패키지가 없습니다. setup/install.ps1 로 의존성을 먼저 설치하세요.")
+
+# .env 자동 로드(python-dotenv 설치 시)
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).with_name(".env"))
+except ImportError:
+    pass
+
+# 도구 import — 선택한 capability 에 따라 자동 생성됨(미선택 시 주석)
+{{TOOL_IMPORTS}}
+
+_HERE = Path(__file__).resolve().parent
+_MODEL = os.environ.get("HERMES_AGENT_MODEL", "{{MODEL}}")
+_MAX_TOKENS = int(os.environ.get("HERMES_AGENT_MAX_TOKENS", "16000"))
+
+
+def _load_system_prompt() -> str:
+    prompt_path = _HERE / "system_prompt.txt"
+    if prompt_path.is_file():
+        return prompt_path.read_text(encoding="utf-8")
+    return "당신은 Antelligen 사내 업무 자동화 에이전트입니다."
+
+
+def _read_task() -> str:
+    if len(sys.argv) > 1:
+        return " ".join(sys.argv[1:]).strip()
+    print("수행할 작업을 입력하세요:")
+    try:
+        return input("> ").strip()
+    except EOFError:
+        return ""
+
+
+def _print_text(message) -> None:
+    for block in getattr(message, "content", []):
+        if getattr(block, "type", None) == "text":
+            print(block.text, end="", flush=True)
+
+
+def main() -> None:
+    task = _read_task()
+    if not task:
+        print("작업이 비어 있어 종료합니다.")
+        return
+
+    # ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN / ANTHROPIC_API_KEY 는 환경변수에서 자동 해석됩니다.
+    client = anthropic.Anthropic()
+    system_prompt = _load_system_prompt()
+    tools = {{TOOLS_LIST}}
+    messages = [{"role": "user", "content": task}]
+
+    if tools:
+        # 도구가 있으면 tool runner 가 에이전트 루프(도구 호출→결과 반영)를 자동 처리
+        runner = client.beta.messages.tool_runner(
+            model=_MODEL,
+            max_tokens=_MAX_TOKENS,
+            system=system_prompt,
+            tools=tools,
+            messages=messages,
+        )
+        for message in runner:
+            _print_text(message)
+    else:
+        response = client.messages.create(
+            model=_MODEL,
+            max_tokens=_MAX_TOKENS,
+            system=system_prompt,
+            messages=messages,
+        )
+        _print_text(response)
+    print()
+
+
+if __name__ == "__main__":
+    main()

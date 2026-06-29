@@ -1,0 +1,8 @@
+# 생성 에이전트 런타임 의존성 (Windows 사내 PC)
+# 사내망에서는 오프라인 설치 권장 — ENVIRONMENT_SETUP.md 의 'wheelhouse' 절 참조.
+
+anthropic>=0.50            # client.beta.messages.tool_runner / beta_tool 지원 버전 필요(최신 권장)
+python-dotenv>=1.0         # .env 로딩
+pywin32>=306; sys_platform == "win32"   # win32com COM 자동화 (drm_file_read/office_automation)
+pyinstaller>=6.0           # 단독 실행파일(.exe) 빌드 (executable_build capability 전용)
+# ui_scaffold capability 는 표준 라이브러리만 사용 — 추가 의존성 없음

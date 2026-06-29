@@ -1,0 +1,68 @@
+# 환경 설정 가이드 (사내망 / Windows)
+
+이 에이전트는 **폐쇄 사내망 Windows PC**에서 동작하도록 설계되었습니다. 아래를 1회 설정하세요.
+
+## 사전 요구사항
+| 항목 | 내용 |
+|------|------|
+| OS | Windows 10/11 (사내 표준 이미지) |
+| Python | 3.10 이상 (사내 배포본/오프라인 인스톨러) |
+| MS Office | Word/Excel/PowerPoint 설치 + 본인 DRM 열람 권한 |
+| 네트워크 | 사내 LLM 게이트웨이(또는 변환 프록시) 접근 가능 |
+
+## 1. Python 설치
+사내 소프트웨어 센터 또는 오프라인 인스톨러로 Python 3.10+ 를 설치합니다.
+설치 시 **"Add Python to PATH"** 를 체크하세요.
+
+## 2. 패키지 설치 (오프라인 권장)
+사내망은 외부 PyPI 접근이 막힌 경우가 많습니다. 두 가지 방법:
+
+**(A) 오프라인 — wheelhouse 사용 (권장)**
+- 인터넷 가능 PC에서 미리 wheel 을 받아 `wheels/` 폴더로 동봉:
+  ```bash
+  pip download -r requirements.txt -d wheels
+  ```
+- 사내 PC에서 설치 시 `setup\install.ps1` 이 `wheels/` 존재를 감지해 `--no-index` 로 설치합니다.
+
+**(B) 사내 PyPI 미러**
+- `pip config set global.index-url http://<사내-pypi>/simple` 설정 후 `setup\install.ps1` 실행.
+
+설치 실행:
+```powershell
+powershell -ExecutionPolicy Bypass -File setup\install.ps1
+```
+
+## 3. 사내 LLM 게이트웨이 연결 (중요)
+이 에이전트는 **Anthropic 호환 엔드포인트**를 호출합니다.
+
+- **사내 게이트웨이가 Anthropic 네이티브**라면: `.env` 의 `ANTHROPIC_BASE_URL` 에 게이트웨이 주소를 바로 적습니다.
+- **사내 게이트웨이가 OpenAI 호환**이라면(대다수): 사내망에 **Anthropic→OpenAI 변환 프록시**를 두고
+  `ANTHROPIC_BASE_URL` 을 그 프록시로 향하게 합니다. 권장 후보:
+  - **LiteLLM Proxy** — Anthropic `/v1/messages` 패스스루를 사내 OpenAI 게이트웨이로 변환
+  - **claude-code-router** — 동일 목적의 경량 라우터
+
+  > 프록시는 인프라팀이 1개만 운영하면 모든 직원 에이전트가 공유할 수 있습니다.
+  > 모델명(`HERMES_AGENT_MODEL`)은 프록시/게이트웨이가 매핑하는 실제 모델명으로 맞추세요.
+  > (기본값: `{{MODEL}}`)
+
+`.env` 작성:
+```ini
+ANTHROPIC_BASE_URL=http://INTERNAL-PROXY-HOST:PORT
+ANTHROPIC_AUTH_TOKEN=replace-with-internal-token
+HERMES_AGENT_MODEL={{MODEL}}
+```
+
+## 4. DRM(MS Office) 판독 준비
+- `read_office_document` 도구는 **pywin32(win32com)** 로 MS Office 를 COM 자동화합니다.
+- `requirements.txt` 에 `pywin32` 가 포함되어 자동 설치됩니다.
+- 직원 PC에 **해당 Office 제품이 설치**되어 있고, **DRM 문서 열람 권한**이 있어야 합니다.
+- 첫 실행 시 Office COM 등록이 필요할 수 있습니다(관리자: `python Scripts\pywin32_postinstall.py -install`).
+
+## 5. 방화벽 / 프록시
+- 에이전트의 egress 가 사내 게이트웨이/프록시로 나가도록 사내 프록시 예외를 등록하세요.
+
+## 6. 동작 확인
+```powershell
+powershell -ExecutionPolicy Bypass -File setup\run.ps1 "안녕, 연결 테스트만 해줘"
+```
+정상 응답이 오면 설정 완료입니다.

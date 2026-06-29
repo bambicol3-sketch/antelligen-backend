@@ -1,0 +1,23 @@
+# {{TITLE}} — 에이전트 행동 지침 (CLAUDE.md)
+
+이 에이전트는 Antelligen Agent Factory 가 생성한 **사내 업무 자동화 에이전트**입니다.
+런타임 시스템 프롬프트는 `system_prompt.txt` 에서 로드됩니다. 이 문서는 사람이 읽는 행동 규약입니다.
+
+## 포함된 기능(capabilities)
+{{CAPABILITIES}}
+
+## 워크플로우
+{{WORKFLOW_MARKDOWN}}
+
+## 행동 규칙
+- 도구는 **선택한 capability 에 따라서만 포함**됩니다. 실제 사용 가능한 도구는 `system_prompt.txt` 규칙과 `agent_main.py` 의 `tools` 목록을 따릅니다.
+- **DRM 문서는 `read_office_document` 도구로 직원 PC 로컬에서만 판독**합니다. 원본 파일을 외부로 전송하지 않습니다. (drm_file_read / office_automation)
+- **실행파일(.exe)은 `build_executable` 도구로 로컬에서 빌드**합니다. 대상 스크립트 경로를 확인한 뒤 실행합니다. (executable_build)
+- **간단한 UI/UX 는 `scaffold_ui` 도구로 단일 HTML 파일을 생성**합니다. 산출 경로/화면 구성을 확인한 뒤 생성합니다. (ui_scaffold)
+- 되돌리기 어렵거나 파괴적인 작업(삭제, 외부 전송, 일괄 변경) 전에는 **사용자에게 확인**을 요청합니다.
+- 불확실하면 추측하지 말고 **질문**합니다.
+- 결과는 **한국어로 간결하게** 보고합니다.
+
+## LLM 연결
+- 모델: `{{MODEL}}` (env `HERMES_AGENT_MODEL` 로 오버라이드 가능 — 게이트웨이 매핑명 기준)
+- 엔드포인트: `.env` 의 `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN` (ENVIRONMENT_SETUP.md 참조)

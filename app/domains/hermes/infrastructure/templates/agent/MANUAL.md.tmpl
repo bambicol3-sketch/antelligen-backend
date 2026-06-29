@@ -1,0 +1,48 @@
+# {{TITLE}} — 사용 매뉴얼
+
+Antelligen Agent Factory 로 생성된 1인 1 업무 에이전트입니다. 직원 본인의 Windows 사내 PC에서 실행합니다.
+
+## 1. 빠른 시작
+1. **환경 설정**을 먼저 1회 완료합니다 → `ENVIRONMENT_SETUP.md`
+2. `.env.example` 을 `.env` 로 복사하고 게이트웨이 주소·토큰을 채웁니다.
+3. PowerShell 에서 설치:
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File setup\install.ps1
+   ```
+4. 실행:
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File setup\run.ps1 "오늘 보고서 초안 작성해줘"
+   ```
+   또는
+   ```powershell
+   .\.venv\Scripts\python.exe agent_main.py "작업 설명"
+   ```
+
+## 2. 이 에이전트가 하는 일 (워크플로우)
+{{WORKFLOW_MARKDOWN}}
+
+## 3. 보유 기능
+{{CAPABILITIES}}
+
+- **DRM 문서 판독**: 작업 중 DRM 걸린 MS Office 파일이 필요하면, 파일의 **절대 경로**를 알려주세요.
+  에이전트가 `read_office_document` 도구로 **직원 PC 로컬에서** 열어 내용을 읽습니다(원본은 PC 밖으로 나가지 않음).
+  예: `C:\Users\me\Documents\기획서.docx 내용 요약해줘`
+
+## 4. 입력/출력 예시
+```
+> python agent_main.py "C:\reports\3월실적.xlsx 에서 매출 합계와 전월 대비 증감을 표로 정리해줘"
+(에이전트가 read_office_document 로 엑셀을 읽고 → 표로 요약 출력)
+```
+
+## 5. 자주 나는 오류
+| 증상 | 원인/대처 |
+|------|-----------|
+| `anthropic 패키지가 없습니다` | `setup\install.ps1` 미실행 → 설치 먼저 |
+| `win32com(pywin32)이 설치되지 않았습니다` | pywin32 미설치 → ENVIRONMENT_SETUP.md 의 pywin32 절차 |
+| `문서 판독 실패: ...` | DRM 열람 권한 없음 / 해당 Office 미설치 / 파일 경로 오류 |
+| 연결/인증 오류 | `.env` 의 `ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN` 확인, 사내 프록시 가동 여부 |
+| 한글 깨짐 | PowerShell 콘솔 인코딩을 UTF-8 로 (`chcp 65001`) |
+
+## 6. 보안 주의
+- `.env`(토큰 포함)는 공유·커밋 금지.
+- DRM 원본 파일은 에이전트가 외부로 전송하지 않습니다(추출 텍스트만 사내 게이트웨이 경유).
