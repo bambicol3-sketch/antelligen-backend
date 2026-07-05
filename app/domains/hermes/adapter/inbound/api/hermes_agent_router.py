@@ -4,12 +4,15 @@
 
 import logging
 
-from fastapi import APIRouter, Query, Response
+from fastapi import APIRouter, File, Form, Query, Response, UploadFile
 
 from app.common.exception.app_exception import AppException
 from app.common.response.base_response import BaseResponse
 from app.domains.hermes.adapter.outbound.packaging.zip_agent_package_builder import (
     ZipAgentPackageBuilder,
+)
+from app.domains.hermes.adapter.outbound.packaging.zip_agent_package_parser import (
+    ZipAgentPackageParser,
 )
 from app.domains.hermes.adapter.outbound.persistence.agent_blueprint_repository_impl import (
     AgentBlueprintRepositoryImpl,
@@ -19,6 +22,9 @@ from app.domains.hermes.application.request.create_agent_blueprint_request impor
 )
 from app.domains.hermes.application.usecase.build_agent_package_usecase import (
     BuildAgentPackageUseCase,
+)
+from app.domains.hermes.application.usecase.import_agent_package_usecase import (
+    ImportAgentPackageUseCase,
 )
 from app.domains.hermes.application.usecase.create_agent_blueprint_usecase import (
     CreateAgentBlueprintUseCase,
@@ -50,6 +56,14 @@ def _builder() -> ZipAgentPackageBuilder:
     return ZipAgentPackageBuilder()
 
 
+def _parser() -> ZipAgentPackageParser:
+    return ZipAgentPackageParser()
+
+
+# 업로드 패키지 허용 최대 크기(50MB). 비정상적으로 큰 파일은 즉시 거절.
+_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+
+
 @router.get("")
 async def list_agents(owner: str | None = Query(None, description="직원 식별자로 필터")):
     usecase = ListAgentBlueprintsUseCase(_repository())
@@ -71,6 +85,31 @@ async def create_agent(request: CreateAgentBlueprintRequest):
     usecase = CreateAgentBlueprintUseCase(_repository())
     data = await usecase.execute(request)
     return BaseResponse.ok(data=data, message="에이전트 설계도 생성 성공")
+
+
+@router.post("/import")
+async def import_agent(
+    file: UploadFile = File(..., description="다른 PC 에서 다운로드한 에이전트 패키지(zip)"),
+    owner: str | None = Form(None, description="복원 후 소유자 지정(미지정 시 원본 유지)"),
+):
+    """다운로드한 에이전트 패키지(zip)를 업로드해 이 백엔드에 에이전트를 복원한다.
+
+    복원된 에이전트는 목록에 나타나며 `/{id}/download` 로 새 PC 에서 다시 받아 실행할 수 있다.
+    """
+    content = await file.read()
+    if not content:
+        raise AppException(status_code=400, message="빈 파일입니다. zip 패키지를 업로드하세요.")
+    if len(content) > _MAX_UPLOAD_BYTES:
+        raise AppException(status_code=400, message="파일이 너무 큽니다(최대 50MB).")
+
+    usecase = ImportAgentPackageUseCase(_repository(), _parser())
+    data = await usecase.execute(content, new_owner=owner)
+    if data is None:
+        raise AppException(
+            status_code=400,
+            message="유효한 에이전트 패키지가 아닙니다. Agent Factory 에서 다운로드한 zip 인지 확인하세요.",
+        )
+    return BaseResponse.ok(data=data, message="에이전트 패키지 복원(import) 성공")
 
 
 @router.put("/{blueprint_id}")

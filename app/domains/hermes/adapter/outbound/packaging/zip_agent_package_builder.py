@@ -4,6 +4,7 @@
 # ⚠️ win32com 툴 파일은 '텍스트 자산'으로 복사만 한다 — 백엔드는 절대 import 하지 않는다.
 
 import io
+import json
 import logging
 import zipfile
 from pathlib import Path
@@ -17,12 +18,19 @@ from app.domains.hermes.domain.service.agent_package_planner import (
     AgentPackagePlan,
     AgentPackagePlanner,
 )
+from app.domains.hermes.infrastructure.mapper.agent_blueprint_mapper import (
+    AgentBlueprintMapper,
+)
 
 logger = logging.getLogger(__name__)
 
 # .../adapter/outbound/packaging/zip_agent_package_builder.py → parents[3] = hermes 도메인 루트
 _HERMES_ROOT = Path(__file__).resolve().parents[3]
 _TEMPLATE_DIR = _HERMES_ROOT / "infrastructure" / "templates" / "agent"
+
+# 패키지 안에 심는 기계가독 blueprint manifest. 다른 PC 에서 재업로드(import) 시 이 파일로
+# 에이전트를 그대로 복원한다. (패키지 루트 상대 경로)
+BLUEPRINT_MANIFEST_PATH = ".hermes/blueprint.json"
 
 
 class ZipAgentPackageBuilder(AgentPackageBuilderPort):
@@ -55,6 +63,12 @@ class ZipAgentPackageBuilder(AgentPackageBuilderPort):
 
             # 시스템 프롬프트는 런타임에 파일로 읽는다(파이썬 문자열 이스케이프 회피).
             zf.writestr(f"{plan.package_name}/system_prompt.txt", plan.system_prompt)
+
+            # 재업로드(import)로 에이전트를 복원하기 위한 기계가독 manifest.
+            manifest = json.dumps(
+                AgentBlueprintMapper.to_dict(blueprint), ensure_ascii=False, indent=2
+            )
+            zf.writestr(f"{plan.package_name}/{BLUEPRINT_MANIFEST_PATH}", manifest)
 
         logger.info(
             "agent package built: %s (tools=%s, caps=%s)",

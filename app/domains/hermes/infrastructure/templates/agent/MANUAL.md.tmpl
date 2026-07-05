@@ -43,6 +43,17 @@ Antelligen Agent Factory 로 생성된 1인 1 업무 에이전트입니다. 직�
 | 연결/인증 오류 | `.env` 의 `ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN` 확인, 사내 프록시 가동 여부 |
 | 한글 깨짐 | PowerShell 콘솔 인코딩을 UTF-8 로 (`chcp 65001`) |
 
-## 6. 보안 주의
+## 6. 다른 PC 에서 재사용 (재업로드)
+이 패키지는 **어느 PC 로 옮겨도 그대로 실행**됩니다(폴더째 복사 → `install.ps1` → `run.ps1`).
+
+새 PC 에서 **Agent Factory 에 다시 등록**하고 싶다면 이 zip 을 그대로 업로드하세요:
+```
+POST /hermes/agents/import   (multipart: file=<이 패키지 zip>, owner=<선택>)
+```
+- 패키지 안의 `.hermes/blueprint.json` 로 에이전트가 **동일하게 복원**됩니다.
+- 복원 후 목록에 나타나며 `GET /hermes/agents/{id}/download` 로 새 PC 에서 최신 패키지를 다시 받을 수 있습니다.
+- ⚠️ `.hermes/blueprint.json` 을 삭제하면 재업로드 복원이 불가하니 지우지 마세요.
+
+## 7. 보안 주의
 - `.env`(토큰 포함)는 공유·커밋 금지.
 - DRM 원본 파일은 에이전트가 외부로 전송하지 않습니다(추출 텍스트만 사내 게이트웨이 경유).
